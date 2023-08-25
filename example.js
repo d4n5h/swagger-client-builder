@@ -12,7 +12,7 @@ const Client = builder.build();
 
 async function main() {
     try {
-        await Client.tenants['{tenantId}'].tickets['{ticketId}'].analyst_comment.post({
+        await Client.pathName['{id}'].post({
             params: {
                 id: 1,
             },
