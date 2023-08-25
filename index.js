@@ -176,9 +176,7 @@ class SwaggerApiClientBuilder {
                                                     let contentType = "application/json";
 
                                                     if (methodKey === "post" || methodKey === "put" || methodKey === "patch") {
-                                                        if (method?.requestBody?.content?.["application/json"]) {
-                                                            contentType = "application/json";
-                                                        } else if (method?.requestBody?.content?.["multipart/form-data"]) {
+                                                        if (method?.requestBody?.content?.["multipart/form-data"]) {
                                                             contentType = "multipart/form-data";
 
                                                             // create form data
