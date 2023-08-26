@@ -2,6 +2,7 @@ const jsonschema = require("jsonschema");
 const axios = require("axios");
 const FormData = require("form-data");
 
+// Utilities
 const isObject = item => item && typeof item === "object" && !Array.isArray(item);
 
 function mergeDeep(target, source) {
@@ -20,6 +21,7 @@ function mergeDeep(target, source) {
     return output;
 }
 
+// Custom error types
 class QueryValidationError extends Error {
     constructor(message) {
         super(message);
