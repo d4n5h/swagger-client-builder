@@ -83,7 +83,6 @@ class SwaggerClientBuilder {
         // Get location
         let location = split[1];
 
-
         if (!["definitions", "components"].includes(location)) location = split[2];
 
         const componentName = split[split.length - 1];
@@ -178,7 +177,6 @@ class SwaggerClientBuilder {
                                     });
 
                                     
-
                                     // Check errors
                                     if (queryValidation?.errors?.length > 0) {
                                         throw new QueryValidationError(queryValidation.errors);
