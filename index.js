@@ -43,6 +43,13 @@ class SwaggerClientBuilder {
         this.swaggerJson = swaggerJson;
         this.validator = new jsonschema.Validator();
         if (!options) options = {};
+
+        this.host = swaggerJson?.host || null;
+        this.basePath = swaggerJson?.basePath || null;
+        this.protocol = swaggerJson?.schemes?.[0] || "http";
+
+        if (this.host) options.baseURL = `${this.protocol}://${this.host}${this.basePath}`;
+
         this.instance = axios.create(options);
     }
 
@@ -55,9 +62,9 @@ class SwaggerClientBuilder {
         try {
             const that = this;
             const { swaggerJson, validator } = this;
-            if (!swaggerJson?.swaggerDoc?.components?.schemas) swaggerJson.swaggerDoc.components.schemas = {};
 
-            const { paths, components } = swaggerJson.swaggerDoc;
+            const paths = swaggerJson?.paths || {};
+            const components = swaggerJson?.components || {};
 
             const { schemas: componentsSchemas } = components;
 
@@ -96,7 +103,7 @@ class SwaggerClientBuilder {
                                     // Get parameters from arguments
                                     const args = Array.from(arguments);
 
-                                    if(!args?.[0]) args[0] = {};
+                                    if (!args?.[0]) args[0] = {};
 
                                     const params = args?.[0]?.params || {};
                                     const query = args?.[0]?.query || {};

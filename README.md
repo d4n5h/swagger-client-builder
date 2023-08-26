@@ -19,23 +19,21 @@ yarn add swagger-client-builder
 Example:
 
 ```javascript
-const SwaggerApiClientBuilder = require("swagger-client-builder");
-
+const SwaggerClientBuilder = require("swagger-client-builder"");
+const axios = require("axios");
 async function main() {
     try {
-        const swaggerJson = require("./swagger.json");
+        const swaggerJson = await axios.get('https://petstore.swagger.io/v2/swagger.json');
 
-        const Client = new SwaggerApiClientBuilder(swaggerJson, {
-            // Your Axios config
-            baseURL: "http://localhost",
+        const Client = new SwaggerClientBuilder(swaggerJson.data, {
             headers: {
                 Authorization: "Bearer " + "<TOKEN>",
             },
         }).build();
 
-        await Client['/path/of/endpoint/{id}'].post({
+        const response = await Client['/pet/{petId}'].get({
             params: {
-                id: 1,
+                petId: 1,
             },
             query:{
                 order:'ASC'
