@@ -1,7 +1,8 @@
 {
   "name": "swagger-client-builder",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Automatically generates an API client on top of Axios using Swagger JSON document and uses its schema for input validation",
+  "keywords":["swagger","client","api","generate","automatic","generates","automatically","build","builder","schema","validation","request","axios","swagger.json","doc","document","openapi","open"],
   "main": "index.js",
   "repository": "https://github.com/d4n5h/swagger-client-builder.git",
   "author": "Daniel Shlomo",
