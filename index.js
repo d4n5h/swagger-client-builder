@@ -1,6 +1,4 @@
-const jsonschema = require("jsonschema");
-const axios = require("axios");
-const FormData = require("form-data");
+const jsonschema = require("jsonschema"), axios = require("axios"), FormData = require("form-data");
 
 // Custom error types
 class QueryValidationError extends Error {
@@ -42,17 +40,57 @@ class SwaggerClientBuilder {
 
         this.swaggerJson = swaggerJson;
         this.validator = new jsonschema.Validator();
-        if (!options) options = {};
+        this.options = options || {};
+
+        this.paths = swaggerJson?.paths || {};
+        this.components = swaggerJson?.components?.schemas || {};
+        this.definitions = swaggerJson?.definitions || {};
 
         this.host = swaggerJson?.host || null;
         this.basePath = swaggerJson?.basePath || null;
         this.protocol = swaggerJson?.schemes?.[0] || "http";
 
-        if (this.host) options.baseURL = `${this.protocol}://${this.host}${this.basePath}`;
+        if (this.host) this.options.baseURL = `${this.protocol}://${this.host}${this.basePath}`;
 
-        this.instance = axios.create(options);
+        this.instance = axios.create(this.options);
     }
 
+    _resolveRef(ref) {
+        const split = ref.split("/");
+        const location = split[1];
+        const componentName = split[2];
+
+        if (location === "definitions") {
+            const component = this.definitions[componentName];
+
+            if (component) {
+                for (const key in component.properties) {
+                    if (component.properties[key]?.$ref) {
+                        component.properties[key] = this._resolveRef(component.properties[key].$ref);
+                    }
+                }
+
+                return component;
+            } else {
+                return {};
+            }
+
+        } else if (location === "components") {
+            const component = this.components[componentName];
+
+            if (component) {
+                for (const key in component.properties) {
+                    if (component.properties[key]?.$ref) {
+                        component.properties[key] = this._resolveRef(component.properties[key].$ref);
+                    }
+                }
+
+                return component;
+            } else {
+                return {};
+            }
+        }
+    }
 
     /**
      * Build the API client
@@ -61,24 +99,19 @@ class SwaggerClientBuilder {
     build() {
         try {
             const that = this;
-            const { swaggerJson, validator } = this;
-
-            const paths = swaggerJson?.paths || {};
-            const components = swaggerJson?.components || {};
-
-            const { schemas: componentsSchemas } = components;
+            const { validator, paths } = this;
 
             const pathsKeys = Object.keys(paths);
 
             const primeObject = {};
 
             // Loop through paths
-            for (let path of pathsKeys) {
+            for (const path of pathsKeys) {
                 const methods = paths[path];
 
                 primeObject[path] = {};
 
-                Object.keys(methods).forEach((methodKey) => {
+                for (const methodKey in methods) {
                     const method = methods[methodKey];
                     const { parameters } = method;
 
@@ -89,10 +122,15 @@ class SwaggerClientBuilder {
                         const { name, required, schema, in: at } = parameter;
                         if (at) {
                             if (!primeSchema[at]) primeSchema[at] = {};
-                            primeSchema[at][name] = {
-                                ...schema,
-                                required,
-                            };
+
+                            if (schema?.$ref) {
+                                primeSchema[at][name] = that._resolveRef(schema.$ref);
+                            } else {
+                                primeSchema[at][name] = {
+                                    ...schema,
+                                    required,
+                                };
+                            }
                         }
                     });
 
@@ -101,14 +139,9 @@ class SwaggerClientBuilder {
                             async (resolve, reject) => {
                                 try {
                                     // Get parameters from arguments
-                                    const args = Array.from(arguments);
+                                    const [args = {}] = arguments;
 
-                                    if (!args?.[0]) args[0] = {};
-
-                                    const params = args?.[0]?.params || {};
-                                    const query = args?.[0]?.query || {};
-                                    const body = args?.[0]?.body || {};
-                                    const options = args?.[0]?.options || {};
+                                    const { params = {}, query = {}, body = {}, options = {} } = args;
 
                                     const id = `${path}/${methodKey}`;
 
@@ -154,7 +187,7 @@ class SwaggerClientBuilder {
                                     // Set content-type
                                     let contentType = "application/json";
 
-                                    if (methodKey === "post" || methodKey === "put" || methodKey === "patch") {
+                                    if (["post", "put", "patch"].includes(methodKey)) {
                                         if (method?.requestBody?.content?.["multipart/form-data"]) {
                                             contentType = "multipart/form-data";
 
@@ -185,16 +218,22 @@ class SwaggerClientBuilder {
                                     }
 
                                     // Validate requestBody component schema
-                                    const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema?.$ref;
+                                    const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
                                     if (requestBodySchema) {
-                                        // Get component
-                                        const split = requestBodySchema.split("/");
-                                        const componentName = split[split.length - 1];
-                                        const component = componentsSchemas?.[componentName];
+                                        if (requestBodySchema.$ref) {
+                                            const component = that._resolveRef(requestBodySchema.$ref);
+                                            if (component) {
+                                                // Validate body
+                                                const bodyValidation = validator.validate(body, component);
 
-                                        if (component) {
+                                                // Check errors
+                                                if (bodyValidation?.errors?.length > 0) {
+                                                    throw new BodyValidationError(bodyValidation.errors);
+                                                }
+                                            }
+                                        } else {
                                             // Validate body
-                                            const bodyValidation = validator.validate(body, component);
+                                            const bodyValidation = validator.validate(body, requestBodySchema);
 
                                             // Check errors
                                             if (bodyValidation?.errors?.length > 0) {
@@ -222,7 +261,7 @@ class SwaggerClientBuilder {
                             }
                         );
                     };
-                });
+                }
             }
 
             return primeObject;
