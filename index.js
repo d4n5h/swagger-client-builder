@@ -126,8 +126,8 @@ class SwaggerClientBuilder {
 
                     parameters.forEach((parameter) => {
                         let { name, required, schema, in: at } = parameter;
-                        if (at) {
 
+                        if (at) {
                             if (at == 'formData') at = 'body';
 
                             if (!primeSchema[at]) primeSchema[at] = {
@@ -141,9 +141,7 @@ class SwaggerClientBuilder {
                                 ...schema,
                             }
 
-                            if (required) {
-                                primeSchema[at].required.push(name);
-                            }
+                            if (required) primeSchema[at].required.push(name);
                         }
                     });
 
