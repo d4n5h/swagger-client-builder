@@ -198,6 +198,7 @@ class SwaggerClientBuilder {
                                     // Set content-type
                                     let contentType = "application/json";
 
+                                    // Resolve content-type and validate body
                                     if (["post", "put", "patch"].includes(methodKey)) {
                                         if (method?.requestBody?.content?.["multipart/form-data"]) {
 
@@ -221,16 +222,20 @@ class SwaggerClientBuilder {
                                             // Set body to form data
                                             body = new URLSearchParams(body).toString();
                                         }
+
+                                        // Validate requestBody component schema
+                                        const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
+
+                                        if (requestBodySchema) {
+                                            // Validate body
+                                            const bodyValidation = validator.validate(body, requestBodySchema);
+                                            if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
+                                        }
                                     }
 
-                                    // Validate requestBody component schema
-                                    const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
-
-                                    if (requestBodySchema) {
-                                        // Validate body
-                                        const bodyValidation = validator.validate(body, requestBodySchema);
-                                        if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
-                                    }
+                                    // Add content-type header
+                                    if(!options?.headers) options.headers = {};
+                                    options.headers["content-type"] = contentType;
 
                                     // Make request
                                     const response =
@@ -238,9 +243,6 @@ class SwaggerClientBuilder {
                                             method: methodKey,
                                             url,
                                             data: body,
-                                            headers: {
-                                                "content-type": contentType,
-                                            },
                                             ...options,
                                         });
 
