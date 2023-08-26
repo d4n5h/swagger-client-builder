@@ -160,30 +160,33 @@ class SwaggerClientBuilder {
                                     const id = `${path}/${methodKey}`;
 
                                     // Validate query
-                                    const queryValidation = validator.validate(query, {
-                                        id,
-                                        ...primeSchema.query
-                                    });
+                                    if (primeSchema.query) {
+                                        const queryValidation = validator.validate(query, {
+                                            id,
+                                            ...primeSchema.query
+                                        });
+
+                                        if (queryValidation?.errors?.length > 0) throw new QueryValidationError(queryValidation.errors);
+                                    }
 
                                     // Validate params
-                                    const paramsValidation = validator.validate(params, {
-                                        id,
-                                        ...primeSchema.path
-                                    });
+                                    if (primeSchema.path) {
+                                        const paramsValidation = validator.validate(params, {
+                                            id,
+                                            ...primeSchema.path
+                                        });
+
+                                        if (paramsValidation?.errors?.length > 0) throw new ParamsValidationError(paramsValidation.errors);
+                                    }
+
 
                                     // Validate body
-                                    const bodyValidation = validator.validate(body, {
-                                        id,
-                                        ...primeSchema.body
-                                    });
-
-                                    // Validate query, params and body
-                                    if (queryValidation?.errors?.length > 0) {
-                                        throw new QueryValidationError(queryValidation.errors);
-                                    } else if (paramsValidation?.errors?.length > 0) {
-                                        throw new ParamsValidationError(paramsValidation.errors);
-                                    } else if (bodyValidation?.errors?.length > 0) {
-                                        throw new BodyValidationError(bodyValidation.errors);
+                                    if (primeSchema.body) {
+                                        const bodyValidation = validator.validate(body, {
+                                            id,
+                                            ...primeSchema.body
+                                        });
+                                        if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
                                     }
 
                                     // Replace path parameters
@@ -234,7 +237,7 @@ class SwaggerClientBuilder {
                                     }
 
                                     // Add content-type header
-                                    if(!options?.headers) options.headers = {};
+                                    if (!options?.headers) options.headers = {};
                                     options.headers["content-type"] = contentType;
 
                                     // Make request
