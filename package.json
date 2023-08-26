@@ -1,6 +1,6 @@
 {
   "name": "swagger-client-builder",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Automatically generates an API client on top of Axios using Swagger JSON document and uses its schema for input validation",
   "main": "index.js",
   "repository": "https://github.com/d4n5h/swagger-client-builder.git",

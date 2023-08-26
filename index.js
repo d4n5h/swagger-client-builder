@@ -2,25 +2,6 @@ const jsonschema = require("jsonschema");
 const axios = require("axios");
 const FormData = require("form-data");
 
-// Utilities
-const isObject = item => item && typeof item === "object" && !Array.isArray(item);
-
-function mergeDeep(target, source) {
-    let output = Object.assign({}, target);
-    if (isObject(target) && isObject(source)) {
-        Object.keys(source).forEach((key) => {
-            if (isObject(source[key])) {
-                if (!(key in target))
-                    Object.assign(output, { [key]: source[key] });
-                else output[key] = mergeDeep(target[key], source[key]);
-            } else {
-                Object.assign(output, { [key]: source[key] });
-            }
-        });
-    }
-    return output;
-}
-
 // Custom error types
 class QueryValidationError extends Error {
     constructor(message) {
@@ -43,12 +24,12 @@ class BodyValidationError extends Error {
     }
 }
 
-class SwaggerApiClientBuilder {
+class SwaggerClientBuilder {
     /**
-     * Create a new SwaggerApiClientBuilder
+     * Create a new SwaggerClientBuilder
      * @param {any} swaggerJson Swagger JSON
      * @param {any} options Axios options
-     * @returns {any} SwaggerApiClientBuilder instance
+     * @returns {any} SwaggerClientBuilder instance
      */
     constructor(swaggerJson, options) {
         if (!swaggerJson) throw new Error("swaggerJson is required");
@@ -82,185 +63,167 @@ class SwaggerApiClientBuilder {
 
             const pathsKeys = Object.keys(paths);
 
-            let objectRoot = {};
+            const primeObject = {};
 
             // Loop through paths
-            for (let key of pathsKeys) {
-                const methods = paths[key];
+            for (let path of pathsKeys) {
+                const methods = paths[path];
 
-                // Remove leading slashes
-                key = key.replace(/^\/+/, "");
+                primeObject[path] = {};
 
-                // Split path into array
-                const endpointPath = key.split("/");
+                Object.keys(methods).forEach((methodKey) => {
+                    const method = methods[methodKey];
+                    const { parameters } = method;
 
-                let obj;
+                    // Convert parameters to jsonschema
+                    const primeSchema = {};
 
-                // Loop through path parts
-                for (let i = endpointPath.length - 1; i >= 0; i--) {
-                    const pathPart = endpointPath[i];
-                    if (i === endpointPath.length - 1) {
-                        obj = {
-                            [pathPart]: (() => {
-                                const m = {};
-                                Object.keys(methods).forEach((methodKey) => {
-                                    const method = methods[methodKey];
-                                    const { parameters } = method;
+                    parameters.forEach((parameter) => {
+                        const { name, required, schema, in: at } = parameter;
+                        if (at) {
+                            if (!primeSchema[at]) primeSchema[at] = {};
+                            primeSchema[at][name] = {
+                                ...schema,
+                                required,
+                            };
+                        }
+                    });
 
-                                    // Convert parameters to jsonschema
-                                    const primeSchema = {};
+                    primeObject[path][methodKey] = async function () {
+                        return new Promise(
+                            async (resolve, reject) => {
+                                try {
+                                    // Get parameters from arguments
+                                    const args = Array.from(arguments);
 
-                                    parameters.forEach((parameter) => {
-                                        const { name, required, schema, in: at } = parameter;
-                                        if (at) {
-                                            if (!primeSchema[at]) primeSchema[at] = {};
-                                            primeSchema[at][name] = {
-                                                ...schema,
-                                                required,
-                                            };
-                                        }
+                                    if(!args?.[0]) args[0] = {};
+
+                                    const params = args?.[0]?.params || {};
+                                    const query = args?.[0]?.query || {};
+                                    const body = args?.[0]?.body || {};
+                                    const options = args?.[0]?.options || {};
+
+                                    const id = `${path}/${methodKey}`;
+
+                                    // Validate query
+                                    const queryValidation = validator.validate(query, {
+                                        id,
+                                        type: "object",
+                                        properties: primeSchema.query,
                                     });
 
-                                    m[methodKey] = async function () {
-                                        return new Promise(
-                                            async (resolve, reject) => {
-                                                try {
-                                                    // Get parameters from arguments
-                                                    const args = Array.from(arguments);
+                                    // Validate params
+                                    const paramsValidation = validator.validate(params, {
+                                        id,
+                                        type: "object",
+                                        properties: primeSchema.path,
+                                    });
 
-                                                    const params = args?.[0]?.params || {};
-                                                    const query = args?.[0]?.query || {};
-                                                    const body = args?.[0]?.body || {};
-                                                    const options = args?.[0]?.options || {};
+                                    // Validate body
+                                    const bodyValidation = validator.validate(body, {
+                                        id,
+                                        type: "object",
+                                        properties: primeSchema.body,
+                                    });
 
-                                                    const id = `/${pathPart}/${methodKey}`;
+                                    // Check errors
+                                    if (queryValidation?.errors?.length > 0) {
+                                        throw new QueryValidationError(queryValidation.errors);
+                                    } else if (paramsValidation?.errors?.length > 0) {
+                                        throw new ParamsValidationError(paramsValidation.errors);
+                                    } else if (bodyValidation?.errors?.length > 0) {
+                                        throw new BodyValidationError(bodyValidation.errors);
+                                    }
 
-                                                    // Validate query
-                                                    const queryValidation = validator.validate(query, {
-                                                        id,
-                                                        type: "object",
-                                                        properties: primeSchema.query,
-                                                    });
+                                    // Replace path parameters
+                                    const urlPath = path.replace(/{(.*?)}/g, (m, c) => params[c]);
 
-                                                    // Validate params
-                                                    const paramsValidation = validator.validate(params, {
-                                                        id,
-                                                        type: "object",
-                                                        properties: primeSchema.path,
-                                                    });
+                                    // Convert params object to query string
+                                    const queryString = new URLSearchParams(query).toString();
 
-                                                    // Validate body
-                                                    const bodyValidation = validator.validate(body, {
-                                                        id,
-                                                        type: "object",
-                                                        properties: primeSchema.body,
-                                                    });
+                                    // Build url
+                                    const url = `${urlPath}${queryString ? `?${queryString}` : ""}`;
 
-                                                    // Check errors
-                                                    if (queryValidation?.errors?.length > 0) {
-                                                        throw new QueryValidationError(queryValidation.errors);
-                                                    } else if (paramsValidation?.errors?.length > 0) {
-                                                        throw new ParamsValidationError(paramsValidation.errors);
-                                                    } else if (bodyValidation?.errors?.length > 0) {
-                                                        throw new BodyValidationError(bodyValidation.errors);
-                                                    }
+                                    // Set content-type
+                                    let contentType = "application/json";
 
-                                                    // Replace path parameters
-                                                    const urlPath = key.replace(/{(.*?)}/g, (m, c) => params[c]);
+                                    if (methodKey === "post" || methodKey === "put" || methodKey === "patch") {
+                                        if (method?.requestBody?.content?.["multipart/form-data"]) {
+                                            contentType = "multipart/form-data";
 
-                                                    // Convert params object to query string
-                                                    const queryString = new URLSearchParams(query).toString();
+                                            // Create form data
+                                            const formData = new FormData();
 
-                                                    // Build url
-                                                    const url = `/${urlPath}${queryString ? `?${queryString}` : ""}`;
+                                            // Add body to form data
+                                            Object.keys(body).forEach((key) => {
+                                                formData.append(key, body[key]);
+                                            });
 
-                                                    // Set content-type
-                                                    let contentType = "application/json";
+                                            // Set body to form data
+                                            body = formData;
+                                        } else if (method?.requestBody?.content?.["application/x-www-form-urlencoded"]) {
+                                            contentType = "application/x-www-form-urlencoded";
 
-                                                    if (methodKey === "post" || methodKey === "put" || methodKey === "patch") {
-                                                        if (method?.requestBody?.content?.["multipart/form-data"]) {
-                                                            contentType = "multipart/form-data";
+                                            // Create form data
+                                            const formData = new URLSearchParams();
 
-                                                            // create form data
-                                                            const formData = new FormData();
+                                            // Add body to form data
+                                            Object.keys(body).forEach((key) => {
+                                                formData.append(key, body[key]);
+                                            });
 
-                                                            // add body to form data
-                                                            Object.keys(body).forEach((key) => {
-                                                                formData.append(key, body[key]);
-                                                            });
+                                            // Set body to form data
+                                            body = formData;
+                                        }
+                                    }
 
-                                                            // set body to form data
-                                                            body = formData;
-                                                        } else if (method?.requestBody?.content?.["application/x-www-form-urlencoded"]) {
-                                                            contentType = "application/x-www-form-urlencoded";
+                                    // Validate requestBody component schema
+                                    const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema?.$ref;
+                                    if (requestBodySchema) {
+                                        // Get component
+                                        const split = requestBodySchema.split("/");
+                                        const componentName = split[split.length - 1];
+                                        const component = componentsSchemas?.[componentName];
 
-                                                            // create form data
-                                                            const formData = new URLSearchParams();
+                                        if (component) {
+                                            // Validate body
+                                            const bodyValidation = validator.validate(body, component);
 
-                                                            // add body to form data
-                                                            Object.keys(body).forEach((key) => {
-                                                                formData.append(key, body[key]);
-                                                            });
-
-                                                            // set body to form data
-                                                            body = formData;
-                                                        }
-                                                    }
-
-                                                    // Get requestBody schema
-                                                    const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema?.$ref;
-                                                    if (requestBodySchema) {
-                                                        // Get component
-                                                        const split = requestBodySchema.split("/");
-                                                        const componentName = split[split.length - 1];
-                                                        const component = componentsSchemas?.[componentName];
-
-                                                        if (component) {
-                                                            // Validate body
-                                                            const bodyValidation = validator.validate(body, component);
-
-                                                            // Check errors
-                                                            if (bodyValidation?.errors?.length > 0) {
-                                                                throw new BodyValidationError(bodyValidation.errors);
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // Make request
-                                                    const response =
-                                                        await that.instance({
-                                                            method: methodKey,
-                                                            url,
-                                                            data: body,
-                                                            headers: {
-                                                                "content-type": contentType,
-                                                            },
-                                                            ...options,
-                                                        });
-
-                                                    resolve(response);
-                                                } catch (error) {
-                                                    reject(error);
-                                                }
+                                            // Check errors
+                                            if (bodyValidation?.errors?.length > 0) {
+                                                throw new BodyValidationError(bodyValidation.errors);
                                             }
-                                        );
-                                    };
-                                });
+                                        }
+                                    }
 
-                                return m;
-                            })(),
-                        };
-                    } else {
-                        obj = { [pathPart]: obj };
-                    }
-                }
-                objectRoot = mergeDeep(objectRoot, obj);
+                                    // Make request
+                                    const response =
+                                        await that.instance({
+                                            method: methodKey,
+                                            url,
+                                            data: body,
+                                            headers: {
+                                                "content-type": contentType,
+                                            },
+                                            ...options,
+                                        });
+
+                                    resolve(response);
+                                } catch (error) {
+                                    reject(error);
+                                }
+                            }
+                        );
+                    };
+                });
             }
-            return objectRoot;
+
+            return primeObject;
+
         } catch (error) {
             throw error;
         }
     }
 }
 
-module.exports = SwaggerApiClientBuilder;
+module.exports = SwaggerClientBuilder;

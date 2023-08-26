@@ -33,7 +33,7 @@ async function main() {
             },
         }).build();
 
-        await Client.pathName['{id}'].post({
+        await Client['/path/of/endpoint/{id}'].post({
             params: {
                 id: 1,
             },
@@ -43,9 +43,6 @@ async function main() {
             body: {
                 title: 'Example'
             },
-            options:{
-                // Axios request options
-            }
         });
 
         console.log(response.data);
