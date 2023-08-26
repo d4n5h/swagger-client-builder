@@ -26,6 +26,7 @@ async function main() {
         const swaggerJson = await axios.get('https://petstore.swagger.io/v2/swagger.json');
 
         const Client = new SwaggerClientBuilder(swaggerJson.data, {
+            // Optional: Axios instance config
             headers: {
                 Authorization: "Bearer " + "<TOKEN>",
             },
@@ -41,6 +42,12 @@ async function main() {
             body: {
                 title: 'Example'
             },
+            /*
+            Optional: Axios request config
+            options:{
+
+            }
+            */
         });
 
         console.log(response.data);

@@ -25,9 +25,10 @@ class BodyValidationError extends Error {
 class SwaggerClientBuilder {
     /**
      * Create a new SwaggerClientBuilder
-     * @param {any} swaggerJson Swagger JSON
-     * @param {any} options Axios options
-     * @returns {any} SwaggerClientBuilder instance
+     * @param {Object} swaggerJson Swagger JSON
+     * @param {Object} options Axios options
+     * @returns {Function} SwaggerClientBuilder instance
+     * @constructor SwaggerClientBuilder
      */
     constructor(swaggerJson, options) {
         if (!swaggerJson) throw new Error("swaggerJson is required");
@@ -127,7 +128,7 @@ class SwaggerClientBuilder {
                         let { name, required, schema, in: at } = parameter;
                         if (at) {
 
-                            if(at == 'formData') at = 'body';
+                            if (at == 'formData') at = 'body';
 
                             if (!primeSchema[at]) primeSchema[at] = {
                                 type: "object",
@@ -176,8 +177,7 @@ class SwaggerClientBuilder {
                                         ...primeSchema.body
                                     });
 
-                                    
-                                    // Check errors
+                                    // Validate query, params and body
                                     if (queryValidation?.errors?.length > 0) {
                                         throw new QueryValidationError(queryValidation.errors);
                                     } else if (paramsValidation?.errors?.length > 0) {
@@ -200,6 +200,7 @@ class SwaggerClientBuilder {
 
                                     if (["post", "put", "patch"].includes(methodKey)) {
                                         if (method?.requestBody?.content?.["multipart/form-data"]) {
+
                                             contentType = "multipart/form-data";
 
                                             // Create form data
@@ -212,19 +213,13 @@ class SwaggerClientBuilder {
 
                                             // Set body to form data
                                             body = formData;
+
                                         } else if (method?.requestBody?.content?.["application/x-www-form-urlencoded"]) {
+
                                             contentType = "application/x-www-form-urlencoded";
 
-                                            // Create form data
-                                            const formData = new URLSearchParams();
-
-                                            // Add body to form data
-                                            Object.keys(body).forEach((key) => {
-                                                formData.append(key, body[key]);
-                                            });
-
                                             // Set body to form data
-                                            body = formData;
+                                            body = new URLSearchParams(body).toString();
                                         }
                                     }
 
@@ -234,11 +229,7 @@ class SwaggerClientBuilder {
                                     if (requestBodySchema) {
                                         // Validate body
                                         const bodyValidation = validator.validate(body, requestBodySchema);
-
-                                        // Check errors
-                                        if (bodyValidation?.errors?.length > 0) {
-                                            throw new BodyValidationError(bodyValidation.errors);
-                                        }
+                                        if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
                                     }
 
                                     // Make request
