@@ -57,38 +57,28 @@ class SwaggerClientBuilder {
 
     _resolveRef(ref) {
         const split = ref.split("/");
-        const location = split[1];
-        const componentName = split[2];
 
-        if (location === "definitions") {
-            const component = this.definitions[componentName];
+        // Get location
+        let location = split[1];
+        
+        if (!["definitions", "components"].includes(location)) location = split[2];
 
-            if (component) {
-                for (const key in component.properties) {
-                    if (component.properties[key]?.$ref) {
-                        component.properties[key] = this._resolveRef(component.properties[key].$ref);
-                    }
+        const componentName = split[split.length - 1];
+
+        const component = this[location][componentName];
+
+        if (component) {
+            for (const key in this[location].properties) {
+                if (component.properties[key]?.$ref) {
+                    component.properties[key] = this._resolveRef(component.properties[key].$ref);
                 }
-
-                return component;
-            } else {
-                return {};
             }
 
-        } else if (location === "components") {
-            const component = this.components[componentName];
+            return component;
 
-            if (component) {
-                for (const key in component.properties) {
-                    if (component.properties[key]?.$ref) {
-                        component.properties[key] = this._resolveRef(component.properties[key].$ref);
-                    }
-                }
-
-                return component;
-            } else {
-                return {};
-            }
+        } else {
+            // Not found
+            return {};
         }
     }
 
