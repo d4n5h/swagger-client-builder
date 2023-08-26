@@ -39,12 +39,21 @@ class SwaggerClientBuilder {
         }
 
         this.swaggerJson = swaggerJson;
-        this.validator = new jsonschema.Validator();
-        this.options = options || {};
-
         this.paths = swaggerJson?.paths || {};
         this.components = swaggerJson?.components?.schemas || {};
         this.definitions = swaggerJson?.definitions || {};
+
+        this.swaggerJson = this._resolveRefs(this.swaggerJson)
+
+        // Reassign after resolving refs
+        this.definitions = this.swaggerJson?.definitions || {};
+        this.components = this.swaggerJson?.components?.schemas || {};
+
+        this.validator = new jsonschema.Validator();
+        this.options = options || {};
+
+
+
 
         this.host = swaggerJson?.host || null;
         this.basePath = swaggerJson?.basePath || null;
@@ -55,27 +64,37 @@ class SwaggerClientBuilder {
         this.instance = axios.create(this.options);
     }
 
+    _resolveRefs(obj) {
+        // Recursively Loop through object keys to find $ref and resolve it
+        if (typeof obj == 'object') {
+            for (const key in obj) {
+                if (obj[key]?.$ref) {
+                    obj[key] = this._resolveRef(obj[key].$ref);
+                    obj[key] = this._resolveRefs(obj[key])
+                } else if (typeof obj[key] === 'object') {
+                    obj[key] = this._resolveRefs(obj[key])
+                }
+            }
+        }
+
+        return obj
+    }
+
     _resolveRef(ref) {
         const split = ref.split("/");
 
         // Get location
         let location = split[1];
-        
+
+
         if (!["definitions", "components"].includes(location)) location = split[2];
 
         const componentName = split[split.length - 1];
 
-        const component = this[location][componentName];
+        const component = this?.[location]?.[componentName];
 
         if (component) {
-            for (const key in this[location].properties) {
-                if (component.properties[key]?.$ref) {
-                    component.properties[key] = this._resolveRef(component.properties[key].$ref);
-                }
-            }
-
             return component;
-
         } else {
             // Not found
             return {};
@@ -109,21 +128,29 @@ class SwaggerClientBuilder {
                     const primeSchema = {};
 
                     parameters.forEach((parameter) => {
-                        const { name, required, schema, in: at } = parameter;
+                        let { name, required, schema, in: at } = parameter;
                         if (at) {
-                            if (!primeSchema[at]) primeSchema[at] = {};
 
-                            if (schema?.$ref) {
-                                primeSchema[at][name] = that._resolveRef(schema.$ref);
-                            } else {
-                                primeSchema[at][name] = {
-                                    ...schema,
-                                    required,
-                                };
+                            if(at == 'formData') at = 'body';
+
+                            if (!primeSchema[at]) primeSchema[at] = {
+                                type: "object",
+                                properties: {},
+                                required: [],
+                            };
+
+                            primeSchema[at].properties[name] = {
+                                required,
+                                ...schema,
+                            }
+
+                            if (required) {
+                                primeSchema[at].required.push(name);
                             }
                         }
                     });
 
+                    // console.log(JSON.stringify(primeSchema, null, 2))
                     primeObject[path][methodKey] = async function () {
                         return new Promise(
                             async (resolve, reject) => {
@@ -138,23 +165,22 @@ class SwaggerClientBuilder {
                                     // Validate query
                                     const queryValidation = validator.validate(query, {
                                         id,
-                                        type: "object",
-                                        properties: primeSchema.query,
+                                        ...primeSchema.query
                                     });
 
                                     // Validate params
                                     const paramsValidation = validator.validate(params, {
                                         id,
-                                        type: "object",
-                                        properties: primeSchema.path,
+                                        ...primeSchema.path
                                     });
 
                                     // Validate body
                                     const bodyValidation = validator.validate(body, {
                                         id,
-                                        type: "object",
-                                        properties: primeSchema.body,
+                                        ...primeSchema.body
                                     });
+
+                                    
 
                                     // Check errors
                                     if (queryValidation?.errors?.length > 0) {
@@ -209,26 +235,14 @@ class SwaggerClientBuilder {
 
                                     // Validate requestBody component schema
                                     const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
+
                                     if (requestBodySchema) {
-                                        if (requestBodySchema.$ref) {
-                                            const component = that._resolveRef(requestBodySchema.$ref);
-                                            if (component) {
-                                                // Validate body
-                                                const bodyValidation = validator.validate(body, component);
+                                        // Validate body
+                                        const bodyValidation = validator.validate(body, requestBodySchema);
 
-                                                // Check errors
-                                                if (bodyValidation?.errors?.length > 0) {
-                                                    throw new BodyValidationError(bodyValidation.errors);
-                                                }
-                                            }
-                                        } else {
-                                            // Validate body
-                                            const bodyValidation = validator.validate(body, requestBodySchema);
-
-                                            // Check errors
-                                            if (bodyValidation?.errors?.length > 0) {
-                                                throw new BodyValidationError(bodyValidation.errors);
-                                            }
+                                        // Check errors
+                                        if (bodyValidation?.errors?.length > 0) {
+                                            throw new BodyValidationError(bodyValidation.errors);
                                         }
                                     }
 
