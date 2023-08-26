@@ -52,9 +52,6 @@ class SwaggerClientBuilder {
         this.validator = new jsonschema.Validator();
         this.options = options || {};
 
-
-
-
         this.host = swaggerJson?.host || null;
         this.basePath = swaggerJson?.basePath || null;
         this.protocol = swaggerJson?.schemes?.[0] || "http";
