@@ -1,4 +1,4 @@
-const jsonschema = require("jsonschema"), axios = require("axios"), FormData = require("form-data");
+const { Validator } = require("jsonschema"), axios = require("axios"), FormData = require("form-data");
 
 // Custom error types
 class QueryValidationError extends Error {
@@ -39,6 +39,10 @@ class SwaggerClientBuilder {
             throw new Error("swaggerJson is not valid");
         }
 
+        this.validator = new Validator();
+
+        // TODO: Replace _resolveRefs with this.validator.addSchema
+
         this.swaggerJson = swaggerJson;
         this.paths = swaggerJson?.paths || {};
         this.components = swaggerJson?.components?.schemas || {};
@@ -50,14 +54,19 @@ class SwaggerClientBuilder {
         this.definitions = this.swaggerJson?.definitions || {};
         this.components = this.swaggerJson?.components?.schemas || {};
 
-        this.validator = new jsonschema.Validator();
-        this.options = options || {};
+        this.options = {};
 
+        if (!options) options = {};
+
+        // Set baseURL if host and basePath are present in swagger doc
         this.host = swaggerJson?.host || null;
         this.basePath = swaggerJson?.basePath || null;
         this.protocol = swaggerJson?.schemes?.[0] || "http";
 
-        if (this.host) this.options.baseURL = `${this.protocol}://${this.host}${this.basePath}`;
+        if (this.host) options.baseURL = `${this.protocol}://${this.host}${this.basePath}`;
+
+        // Set options
+        this.options = { ...options, ...this.options };
 
         this.instance = axios.create(this.options);
     }
@@ -107,12 +116,10 @@ class SwaggerClientBuilder {
             const that = this;
             const { validator, paths } = this;
 
-            const pathsKeys = Object.keys(paths);
-
             const primeObject = {};
 
             // Loop through paths
-            for (const path of pathsKeys) {
+            for (const path in paths) {
                 const methods = paths[path];
 
                 primeObject[path] = {};
@@ -145,7 +152,6 @@ class SwaggerClientBuilder {
                         }
                     });
 
-                    // console.log(JSON.stringify(primeSchema, null, 2))
                     primeObject[path][methodKey] = async function () {
                         return new Promise(
                             async (resolve, reject) => {
@@ -209,9 +215,7 @@ class SwaggerClientBuilder {
                                             const formData = new FormData();
 
                                             // Add body to form data
-                                            Object.keys(body).forEach((key) => {
-                                                formData.append(key, body[key]);
-                                            });
+                                            for (const key in body) formData.append(key, body[key]);
 
                                             // Set body to form data
                                             body = formData;
@@ -230,6 +234,7 @@ class SwaggerClientBuilder {
                                         if (requestBodySchema) {
                                             // Validate body
                                             const bodyValidation = validator.validate(body, requestBodySchema);
+
                                             if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
                                         }
                                     }
