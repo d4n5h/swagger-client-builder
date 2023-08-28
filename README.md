@@ -2,7 +2,7 @@
 
 Automatically generates an API client on top of Axios using Swagger JSON document.
 It uses the Swagger schema for input validation.
-It will automatically get the content-type and convert the body accordingly.
+It will automatically gets the content-type from the requestBody and converts the body accordingly.
 
 Install:
 
