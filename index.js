@@ -1,4 +1,5 @@
 const { Validator } = require("jsonschema"), axios = require("axios"), FormData = require("form-data");
+const methods = ["get", "post", "put", "patch", "delete", "options", "head", "trace"];
 
 // Custom error types
 class QueryValidationError extends Error {
@@ -69,6 +70,17 @@ class SwaggerClientBuilder {
         this.options = { ...options, ...this.options };
 
         this.instance = axios.create(this.options);
+
+        // Build paths
+        this.paths = this._buildPaths();
+
+        // Add methods
+        for (const method of methods) {
+            this[method] = async function (path, args) {
+                if (!this?.paths?.[path]?.[method]) throw new Error(`Method "${method}/${path}" not found`);
+                return this.paths[path][method](args);
+            }
+        }
     }
 
     _resolveRefs(obj) {
@@ -107,11 +119,7 @@ class SwaggerClientBuilder {
         }
     }
 
-    /**
-     * Build the API client
-     * @returns {Object}
-     */
-    build() {
+    _buildPaths() {
         try {
             const that = this;
             const { validator, paths } = this;

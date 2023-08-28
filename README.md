@@ -30,9 +30,9 @@ async function main() {
             headers: {
                 Authorization: "Bearer " + "<TOKEN>",
             },
-        }).build();
+        });
 
-        const response = await Client['/pet/{petId}'].get({
+        const response = await Client.get('/pet/{petId}',{
             params: {
                 petId: 1,
             },
