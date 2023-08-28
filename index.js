@@ -1,4 +1,4 @@
-const { Validator } = require("jsonschema"), axios = require("axios"), FormData = require("form-data");
+const { Validator } = require("jsonschema"), axios = require("axios"), FormData = require("form-data"), xml2js = require('xml2js');
 const methods = ["get", "post", "put", "patch", "delete", "options", "head", "trace"];
 
 // Custom error types
@@ -43,6 +43,7 @@ class SwaggerClientBuilder {
         this.validator = new Validator();
 
         // TODO: Replace _resolveRefs with this.validator.addSchema
+        // TODO: Add support for securityDefinitions
 
         this.swaggerJson = swaggerJson;
         this.paths = swaggerJson?.paths || {};
@@ -139,132 +140,138 @@ class SwaggerClientBuilder {
                     // Convert parameters to jsonschema
                     const primeSchema = {};
 
-                    parameters.forEach((parameter) => {
-                        let { name, required, schema, in: at } = parameter;
+                    if (parameters) {
+                        parameters.forEach((parameter) => {
+                            let { name, required, schema, in: at } = parameter;
 
-                        if (at) {
-                            if (at == 'formData') at = 'body';
+                            if (at) {
+                                if (at == 'formData') at = 'body';
 
-                            if (!primeSchema[at]) primeSchema[at] = {
-                                type: "object",
-                                properties: {},
-                                required: [],
-                            };
+                                if (!primeSchema[at]) primeSchema[at] = {
+                                    type: "object",
+                                    properties: {},
+                                    required: [],
+                                };
 
-                            primeSchema[at].properties[name] = {
-                                required,
-                                ...schema,
+                                primeSchema[at].properties[name] = {
+                                    required,
+                                    ...schema,
+                                }
+
+                                if (required) primeSchema[at].required.push(name);
                             }
+                        });
+                    }
 
-                            if (required) primeSchema[at].required.push(name);
-                        }
-                    });
 
                     primeObject[path][methodKey] = async function () {
-                        return new Promise(
-                            async (resolve, reject) => {
-                                try {
-                                    // Get parameters from arguments
-                                    const [args = {}] = arguments;
+                        return new Promise(async (resolve, reject) => {
+                            try {
+                                // Get parameters from arguments
+                                const [args = {}] = arguments;
 
-                                    const { params = {}, query = {}, body = {}, options = {} } = args;
+                                let { params = {}, query = {}, body = {}, options = {} } = args;
 
-                                    const id = `${path}/${methodKey}`;
+                                const id = `${path}/${methodKey}`;
 
-                                    // Validate query
-                                    if (primeSchema.query) {
-                                        const queryValidation = validator.validate(query, {
-                                            id,
-                                            ...primeSchema.query
-                                        });
+                                // Validate query
+                                if (primeSchema.query) {
+                                    const queryValidation = validator.validate(query, {
+                                        id,
+                                        ...primeSchema.query
+                                    });
 
-                                        if (queryValidation?.errors?.length > 0) throw new QueryValidationError(queryValidation.errors);
+                                    if (queryValidation?.errors?.length > 0) throw new QueryValidationError(queryValidation.errors);
+                                }
+
+                                // Validate params
+                                if (primeSchema.path) {
+                                    const paramsValidation = validator.validate(params, {
+                                        id,
+                                        ...primeSchema.path
+                                    });
+
+                                    if (paramsValidation?.errors?.length > 0) throw new ParamsValidationError(paramsValidation.errors);
+                                }
+
+
+                                // Validate body
+                                if (primeSchema.body) {
+                                    const bodyValidation = validator.validate(body, {
+                                        id,
+                                        ...primeSchema.body
+                                    });
+                                    
+                                    if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
+                                }
+
+                                // Replace path parameters
+                                const urlPath = path.replace(/{(.*?)}/g, (m, c) => params[c]);
+
+                                // Convert params object to query string
+                                const queryString = new URLSearchParams(query).toString();
+
+                                // Build url
+                                const url = `${urlPath}${queryString ? `?${queryString}` : ""}`;
+
+                                // Set content-type
+                                let contentType = options?.headers?.['Content-Type'] || "application/json";
+
+                                // Resolve content-type and validate body
+                                if (["post", "put", "patch"].includes(methodKey)) {
+                                    // requestBody content types
+                                    const requestContentTypes = method?.requestBody?.content || {};
+                                    const contentTypeKeys = Object.keys(requestContentTypes);
+
+                                    // Set content-type to first content type if content type didn't match
+                                    if (!contentTypeKeys.includes(contentType) && contentTypeKeys[0]) {
+                                        contentType = contentTypeKeys[0];
+                                    } else if (!contentTypeKeys[0]) {
+                                        contentType = "application/json";
                                     }
 
-                                    // Validate params
-                                    if (primeSchema.path) {
-                                        const paramsValidation = validator.validate(params, {
-                                            id,
-                                            ...primeSchema.path
-                                        });
+                                    // Validate requestBody component schema
+                                    const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
 
-                                        if (paramsValidation?.errors?.length > 0) throw new ParamsValidationError(paramsValidation.errors);
-                                    }
-
-
-                                    // Validate body
-                                    if (primeSchema.body) {
-                                        const bodyValidation = validator.validate(body, {
-                                            id,
-                                            ...primeSchema.body
-                                        });
+                                    if (requestBodySchema) {
+                                        // Validate body
+                                        const bodyValidation = validator.validate(body, requestBodySchema);
                                         if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
                                     }
 
-                                    // Replace path parameters
-                                    const urlPath = path.replace(/{(.*?)}/g, (m, c) => params[c]);
-
-                                    // Convert params object to query string
-                                    const queryString = new URLSearchParams(query).toString();
-
-                                    // Build url
-                                    const url = `${urlPath}${queryString ? `?${queryString}` : ""}`;
-
-                                    // Set content-type
-                                    let contentType = "application/json";
-
-                                    // Resolve content-type and validate body
-                                    if (["post", "put", "patch"].includes(methodKey)) {
-                                        if (method?.requestBody?.content?.["multipart/form-data"]) {
-
-                                            contentType = "multipart/form-data";
-
-                                            // Create form data
-                                            const formData = new FormData();
-
-                                            // Add body to form data
-                                            for (const key in body) formData.append(key, body[key]);
-
-                                            // Set body to form data
-                                            body = formData;
-
-                                        } else if (method?.requestBody?.content?.["application/x-www-form-urlencoded"]) {
-
-                                            contentType = "application/x-www-form-urlencoded";
-
-                                            // Set body to form data
-                                            body = new URLSearchParams(body).toString();
-                                        }
-
-                                        // Validate requestBody component schema
-                                        const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
-
-                                        if (requestBodySchema) {
-                                            // Validate body
-                                            const bodyValidation = validator.validate(body, requestBodySchema);
-
-                                            if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
-                                        }
+                                    // Convert body to content-type
+                                    if (contentType == "multipart/form-data") {
+                                        // Convert body to form data
+                                        const formData = new FormData();
+                                        for (const key in body) formData.append(key, body[key]);
+                                        body = formData;
+                                    } else if (contentType == "application/x-www-form-urlencoded") {
+                                        // Convert body to url encoded
+                                        body = new URLSearchParams(body).toString();
+                                    } else if (contentType == "application/xml") {
+                                        // Convert body to xml
+                                        const builder = new xml2js.Builder();
+                                        body = builder.buildObject(body);
                                     }
-
-                                    // Add content-type header
-                                    if (!options?.headers) options.headers = {};
-                                    options.headers["content-type"] = contentType;
-
-                                    // Make request
-                                    const response =
-                                        await that.instance({
-                                            method: methodKey,
-                                            url,
-                                            data: body,
-                                            ...options,
-                                        });
-
-                                    resolve(response);
-                                } catch (error) {
-                                    reject(error);
                                 }
+
+                                // Add content-type header
+                                if (!options?.headers) options.headers = {};
+                                options.headers["content-type"] = contentType;
+
+                                // Make request
+                                const response = await that.instance({
+                                    method: methodKey,
+                                    url,
+                                    data: body,
+                                    ...options,
+                                });
+
+                                resolve(response);
+                            } catch (error) {
+                                reject(error);
                             }
+                        }
                         );
                     };
                 }

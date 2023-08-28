@@ -21,36 +21,24 @@ Example:
 ```javascript
 const SwaggerClientBuilder = require("swagger-client-builder"");
 const axios = require("axios");
+
 async function main() {
     try {
-        const swaggerJson = await axios.get('https://petstore.swagger.io/v2/swagger.json');
+        const swaggerJson = await axios.get('https://petstore3.swagger.io/api/v3/openapi.json');
 
         const Client = new SwaggerClientBuilder(swaggerJson.data, {
             // Optional: Axios instance config
-            headers: {
-                Authorization: "Bearer " + "<TOKEN>",
-            },
-        });
+            baseURL: 'https://petstore3.swagger.io/api/v3'
+        })
 
-        const response = await Client.get('/pet/{petId}',{
+        const response = await Client.get('/pet/{petId}', {
             params: {
                 petId: 1,
-            },
-            query:{
-                order:'ASC'
-            },
-            body: {
-                title: 'Example'
-            },
-            /*
-            Optional: Axios request config
-            options:{
-
             }
-            */
         });
 
         console.log(response.data);
+
     } catch (error) {
         console.log(error);
     }
