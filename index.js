@@ -78,7 +78,7 @@ class SwaggerClientBuilder {
         // Add methods
         for (const method of methods) {
             this[method] = async function (path, args) {
-                if (!this?.paths?.[path]?.[method]) throw new Error(`Method "${method}/${path}" not found`);
+                if (!this?.paths?.[path]?.[method]) throw new Error(`Method "${method.toUpperCase()}->${path}" not found`);
                 return this.paths[path][method](args);
             }
         }
