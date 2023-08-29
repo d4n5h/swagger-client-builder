@@ -34,7 +34,15 @@ async function main() {
         const response = await Client.get('/pet/{petId}', {
             params: {
                 petId: 1,
+            },
+            /*
+            query:{},
+            body:{},
+            options:{
+                // Axios request options
+                headers:{...}
             }
+            */
         });
 
         // Or (if operationId is defined in swagger)
@@ -42,7 +50,7 @@ async function main() {
         const response2 = await Client.getPetById({
             params: { petId: 1 },
         });
-        
+
         console.log(response.data);
 
     } catch (error) {
