@@ -19,7 +19,7 @@ yarn add swagger-client-builder
 Example:
 
 ```javascript
-const SwaggerClientBuilder = require("swagger-client-builder"");
+const SwaggerClientBuilder = require("swagger-client-builder");
 const axios = require("axios");
 
 async function main() {
