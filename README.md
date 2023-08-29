@@ -37,6 +37,12 @@ async function main() {
             }
         });
 
+        // Or (if operationId is defined in swagger)
+
+        const response2 = await Client.getPetById({
+            params: { petId: 1 },
+        });
+        
         console.log(response.data);
 
     } catch (error) {

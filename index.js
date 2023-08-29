@@ -274,6 +274,9 @@ class SwaggerClientBuilder {
                         }
                         );
                     };
+
+                    // Use operationId as method name if present
+                    if(method?.operationId && method?.operationId != "") this[method.operationId] = primeObject[path][methodKey];
                 }
             }
 
