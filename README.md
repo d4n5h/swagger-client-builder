@@ -15,6 +15,8 @@ Basically using the Swagger document to generate a client in reverse.
 
 6. Currently it supports Swagger v2 and OpenAPI v3, but it might support other versions. If it doesn't then you can open an issue or create a pull request.
 
+7. If operationId is defined for paths then you can also export the client as a standalone file using the `export()` function.
+
 ## Install
 
 ```bash
@@ -63,6 +65,11 @@ async function main() {
         });
 
         console.log(response.data);
+
+        // You can also export the client to a file, but operationId is required in this case
+        await Client.export('./client.js',{
+            validation: true,
+        });
 
     } catch (error) {
         console.log(error);

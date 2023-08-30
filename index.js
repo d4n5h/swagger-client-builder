@@ -1,4 +1,9 @@
-const { Validator } = require("jsonschema"), axios = require("axios"), FormData = require("form-data"), xml2js = require('xml2js');
+const beautify = require('js-beautify/js').js,
+    { Validator } = require("jsonschema"),
+    axios = require("axios"),
+    FormData = require("form-data"),
+    xml2js = require('xml2js'),
+    fs = require('fs').promises;
 const methods = ["get", "post", "put", "patch", "delete", "options", "head", "trace"];
 
 // Custom error types
@@ -73,13 +78,13 @@ class SwaggerClientBuilder {
         this.instance = axios.create(this.options);
 
         // Build paths
-        this.paths = this._buildPaths();
+        this.builtPaths = this._buildPaths();
 
         // Add methods
         for (const method of methods) {
             this[method] = async function (path, args) {
-                if (!this?.paths?.[path]?.[method]) throw new Error(`Method "${method.toUpperCase()}->${path}" not found`);
-                return this.paths[path][method](args);
+                if (!this?.builtPaths?.[path]?.[method]) throw new Error(`Method "${method.toUpperCase()}->${path}" not found`);
+                return this.builtPaths[path][method](args);
             }
         }
     }
@@ -201,7 +206,7 @@ class SwaggerClientBuilder {
                                         id,
                                         ...primeSchema.body
                                     });
-                                    
+
                                     if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
                                 }
 
@@ -276,7 +281,7 @@ class SwaggerClientBuilder {
                     };
 
                     // Use operationId as method name if present
-                    if(method?.operationId && method?.operationId != "") this[method.operationId] = primeObject[path][methodKey];
+                    if (method?.operationId && method?.operationId != "") this[method.operationId] = primeObject[path][methodKey];
                 }
             }
 
@@ -285,6 +290,186 @@ class SwaggerClientBuilder {
         } catch (error) {
             throw error;
         }
+    }
+
+    async export(filePath, options) {
+        const validation = options?.validation || false;
+
+        let addedXml2js = false;
+
+        let str = `const axios = require("axios");\n`;
+
+        if (validation) str += `const { Validator } = require("jsonschema");\n`;
+
+        str += `\nclass Client {\n`;
+        str += `    constructor(options) {\n`;
+        str += `        this.instance = axios.create(options);\n`;
+        if (validation) {
+            str += `        this.validator = new Validator();\n`;
+            // Add components and definitions
+            str += `        this.components = ${JSON.stringify(this.components, null, 2)};\n`;
+            str += `        this.definitions = ${JSON.stringify(this.definitions, null, 2)};\n`;
+        }
+        str += `    }\n\n`;
+        // Add paths
+        for (const path in this.paths) {
+            const methods = this.paths[path];
+            for (const methodKey in methods) {
+                const method = methods[methodKey];
+                const { parameters } = method;
+                const primeSchema = {};
+
+                if (parameters && validation) {
+                    parameters.forEach((parameter) => {
+                        let { name, required, schema, in: at } = parameter;
+
+                        if (at) {
+                            if (at == 'formData') at = 'body';
+
+                            if (!primeSchema[at]) primeSchema[at] = {
+                                type: "object",
+                                properties: {},
+                                required: [],
+                            };
+
+                            primeSchema[at].properties[name] = {
+                                required,
+                                ...schema,
+                            }
+
+                            if (required) primeSchema[at].required.push(name);
+                        }
+                    });
+                }
+
+                // Replace path parameters
+                if (method?.operationId && method?.operationId != "") {
+                    // Add jsdoc
+                    str += `    /**\n`;
+                    str += `     * ${method.summary}\n`;
+                    str += `     * @param {Object} args\n`;
+                    str += `     * @param {Object} args.params\n`;
+                    str += `     * @param {Object} args.query\n`;
+                    str += `     * @param {Object} args.body\n`;
+                    str += `     * @param {Object} args.options\n`;
+                    str += `     * @returns {Promise<Object>} Response\n`;
+                    str += `     */\n`;
+                    str += `    async ${method.operationId}(args) {\n`;
+                    str += `        return new Promise(async (resolve, reject) => {\n`;
+                    str += `            try {\n`;
+                    str += `                const { params = {}, query = {}, body = {}, options = {} } = args;\n`;
+                    // Add validation
+                    if (validation) {
+                        str += `                const id = "${path}/${methodKey}";\n`;
+                        // Validate query
+                        if (primeSchema.query) {
+                            str += `                const queryValidation = this.validator.validate(query, {\n`;
+                            str += `                    id,\n`;
+                            str += `                    ...${JSON.stringify(primeSchema.query, null, 2)}\n`;
+                            str += `                });\n`;
+                            str += `                if (queryValidation?.errors?.length > 0) throw new Error(queryValidation.errors);\n`;
+                        }
+                        // Validate params
+                        if (primeSchema.path) {
+                            str += `                const paramsValidation = this.validator.validate(params, {\n`;
+                            str += `                    id,\n`;
+                            str += `                    ...${JSON.stringify(primeSchema.path, null, 2)}\n`;
+                            str += `                });\n`;
+                            str += `                if (paramsValidation?.errors?.length > 0) throw new Error(paramsValidation.errors);\n`;
+                        }
+                        // Validate body
+                        if (primeSchema.body) {
+                            str += `                const bodyValidation = this.validator.validate(body, {\n`;
+                            str += `                    id,\n`;
+                            str += `                    ...${JSON.stringify(primeSchema.body, null, 2)}\n`;
+                            str += `                });\n`;
+                            str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n`;
+                        }
+                    }
+
+                    let contentType;
+
+                    // Validate requestBody component schema
+                    if (["post", "put", "patch"].includes(methodKey)) {
+                        // requestBody content types
+                        const requestContentTypes = method?.requestBody?.content || {};
+                        const contentTypeKeys = Object.keys(requestContentTypes);
+
+                        console.log(contentTypeKeys)
+                        // Set content-type to first content type if content type didn't match
+                        if (contentTypeKeys[0]) {
+                            contentType = contentTypeKeys[0];
+                        } else {
+                            contentType = "application/json";
+                        }
+
+                        if (validation) {
+                            // Validate requestBody component schema
+                            const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
+
+                            if (requestBodySchema) {
+                                // Validate body
+                                str += `                const bodyValidation = this.validator.validate(body, ${JSON.stringify(requestBodySchema, null, 2)});\n`;
+                                str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n`;
+                            }
+                        }
+
+                        // Convert body to content-type
+                        if (contentType == "multipart/form-data") {
+                            // Convert body to form data
+                            str += `                const FormData = require("form-data");\n`;
+                            str += `                const formData = new FormData();\n`;
+                            str += `                for (const key in body) formData.append(key, body[key]);\n`;
+                            str += `                body = formData;\n`;
+                        } else if (contentType == "application/x-www-form-urlencoded") {
+                            // Convert body to url encoded
+                            str += `                const URLSearchParams = require("url").URLSearchParams;\n`;
+                            str += `                body = new URLSearchParams(body).toString();\n`;
+                        } else if (contentType == "application/xml") {
+                            // add xml2js dependency
+                            if (!addedXml2js) {
+                                str = `const xml2js = require('xml2js');\n` + str;
+                                addedXml2js = true;
+                            }
+                            // Convert body to xml
+                            str += `                const builder = new xml2js.Builder();\n`;
+                            str += `                body = builder.buildObject(body);\n`;
+                        }
+                        // Add content-type header
+                        str += `                if (!options?.headers) options.headers = {};\n`;
+                        str += `                options.headers["content-type"] = "${contentType}";\n`;
+                    }
+
+                    // Convert params object to query string
+                    str += `                const queryString = new URLSearchParams(query).toString();\n`;
+                    str += `                const path = "${path}";\n`;
+                    str += `                const urlPath = path.replace(/{(.*?)}/g, (m, c) => params[c]);\n`;
+                    str += `                const url = \`\${urlPath}\${queryString ? \`?\${queryString}\` : ""}\`;\n`;
+                    str += `                const response = await this.instance({\n`;
+                    str += `                    method: "${methodKey}",\n`;
+                    str += `                    url,\n`;
+                    str += `                    params,\n`;
+                    str += `                    data: body,\n`;
+                    str += `                    ...options,\n`;
+                    str += `                });\n`;
+                    str += `                resolve(response);\n`;
+                    str += `            } catch (error) {\n`;
+                    str += `                reject(error);\n`;
+                    str += `            }\n`;
+                    str += `        });\n`;
+                    str += `    }\n\n`;
+                }
+            }
+        }
+
+        str += `}\n\n`;
+        str += `module.exports = Client;`;
+
+        const formattedCode = beautify(str, { indent_size: 2, space_in_empty_paren: true });
+
+        await fs.writeFile(filePath, formattedCode);
+
+        return formattedCode;
     }
 }
 
