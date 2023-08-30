@@ -348,10 +348,10 @@ class SwaggerClientBuilder {
                     str += `    /**\n`;
                     str += `     * ${method.summary}\n`;
                     str += `     * @param {Object} args\n`;
-                    str += `     * @param {Object} args.params\n`;
-                    str += `     * @param {Object} args.query\n`;
-                    str += `     * @param {Object} args.body\n`;
-                    str += `     * @param {Object} args.options\n`;
+                    str += `     * @param {Object} args.params Path parameters\n`;
+                    str += `     * @param {Object} args.query Query parameters\n`;
+                    str += `     * @param {Object} args.body Request body\n`;
+                    str += `     * @param {Object} args.options Axios request options\n`;
                     str += `     * @returns {Promise<Object>} Response\n`;
                     str += `     */\n`;
                     str += `    async ${method.operationId}(args) {\n`;
