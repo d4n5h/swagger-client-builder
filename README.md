@@ -1,22 +1,33 @@
-# swagger-client-builder
+# Swagger API Client Builder
 
-Automatically generates an API client on top of Axios using Swagger JSON document.
-It uses the Swagger schema for input validation.
-It will automatically gets the content-type from the requestBody and converts the body accordingly.
+Automatically generate an API client on top of Axios using Swagger JSON document.
+Basically using the Swagger document to generate a client in reverse.
 
-Install:
+1. It uses the Swagger schema for input validation and it resolves all the schema references.
+
+2. It automatically gets the content-type from the requestBody and converts the body accordingly, if there's no content-type to the requestBody then it will fallback to JSON.
+
+3. If operationIds are defined, it will use them as method names, or you can use `.get("/path/name/{id}")` / `.post("/path/name")`, etc...
+
+4. It will try to resolve the protocol, host and base path. But if the Swagger document doesn't contain them then you'll need to define them in the axios config.
+
+5. Don't use operationIds that are like method types (e.g "get", "post", "put", "delete", etc...)
+
+6. Currently it supports Swagger v2 and OpenAPI v3, but it might support other versions. If it doesn't then you can open an issue or create a pull request.
+
+## Install
 
 ```bash
 npm install swagger-client-builder
 ```
 
-Or:
+### Or
 
 ```bash
 yarn add swagger-client-builder
 ```
 
-Example:
+## Example
 
 ```javascript
 const SwaggerClientBuilder = require("swagger-client-builder");
