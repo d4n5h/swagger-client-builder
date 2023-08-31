@@ -79,7 +79,7 @@ async function main() {
 main();
 ```
 
-### Export from CLI (Only words if operationId is defined)
+### Export from CLI (Only works if operationId is defined)
 
 You can install the package globally using
 
