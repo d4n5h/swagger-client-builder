@@ -125,6 +125,33 @@ class SwaggerClientBuilder {
         }
     }
 
+    _prepareParameters(parameters) {
+        const primeSchema = {};
+        if (!parameters || typeof parameters !== 'object' || Object.keys(parameters).length == 0) return primeSchema;
+        parameters.forEach((parameter) => {
+            let { name, required, schema, in: at } = parameter;
+
+            if (at) {
+                if (at == 'formData') at = 'body';
+
+                if (!primeSchema[at]) primeSchema[at] = {
+                    type: "object",
+                    properties: {},
+                    required: [],
+                };
+
+                primeSchema[at].properties[name] = {
+                    required,
+                    ...schema,
+                }
+
+                if (required) primeSchema[at].required.push(name);
+            }
+        });
+
+        return primeSchema;
+    }
+
     _buildPaths() {
         try {
             const that = this;
@@ -143,30 +170,7 @@ class SwaggerClientBuilder {
                     const { parameters } = method;
 
                     // Convert parameters to jsonschema
-                    const primeSchema = {};
-
-                    if (parameters) {
-                        parameters.forEach((parameter) => {
-                            let { name, required, schema, in: at } = parameter;
-
-                            if (at) {
-                                if (at == 'formData') at = 'body';
-
-                                if (!primeSchema[at]) primeSchema[at] = {
-                                    type: "object",
-                                    properties: {},
-                                    required: [],
-                                };
-
-                                primeSchema[at].properties[name] = {
-                                    required,
-                                    ...schema,
-                                }
-
-                                if (required) primeSchema[at].required.push(name);
-                            }
-                        });
-                    }
+                    const primeSchema = this._prepareParameters(parameters);
 
 
                     primeObject[path][methodKey] = async function () {
@@ -301,46 +305,37 @@ class SwaggerClientBuilder {
 
         if (validation) str += `const { Validator } = require("jsonschema");\n`;
 
+        // Add convert url function
+        str += `\nconst convertUrl = (path, params, query) => {\n`;
+        str += `    const queryString = new URLSearchParams(query).toString();\n`;
+        str += `    const urlPath = path.replace(/{(.*?)}/g, (m, c) => params[c]);\n`;
+        str += `    const url = \`\${urlPath}\${queryString ? \`?\${queryString}\` : ""}\`;\n`;
+        str += `    return url;\n`;
+        str += `};\n`;
+
         str += `\nclass Client {\n`;
         str += `    constructor(options) {\n`;
         str += `        this.instance = axios.create(options);\n`;
+
+        // Add validator and components
         if (validation) {
             str += `        this.validator = new Validator();\n`;
             // Add components and definitions
-            str += `        this.components = ${JSON.stringify(this.components, null, 2)};\n`;
-            str += `        this.definitions = ${JSON.stringify(this.definitions, null, 2)};\n`;
+            // str += `        this.components = ${JSON.stringify(this.components, null, 2)};\n`;
+            // str += `        this.definitions = ${JSON.stringify(this.definitions, null, 2)};\n`;
         }
+
         str += `    }\n\n`;
-        // Add paths
+
+        // Add methods/paths to class
         for (const path in this.paths) {
             const methods = this.paths[path];
             for (const methodKey in methods) {
                 const method = methods[methodKey];
                 const { parameters } = method;
-                const primeSchema = {};
 
-                if (parameters && validation) {
-                    parameters.forEach((parameter) => {
-                        let { name, required, schema, in: at } = parameter;
-
-                        if (at) {
-                            if (at == 'formData') at = 'body';
-
-                            if (!primeSchema[at]) primeSchema[at] = {
-                                type: "object",
-                                properties: {},
-                                required: [],
-                            };
-
-                            primeSchema[at].properties[name] = {
-                                required,
-                                ...schema,
-                            }
-
-                            if (required) primeSchema[at].required.push(name);
-                        }
-                    });
-                }
+                let primeSchema = {};
+                if (parameters && validation) primeSchema = this._prepareParameters(parameters);
 
                 // Replace path parameters
                 if (method?.operationId && method?.operationId != "") {
@@ -357,17 +352,17 @@ class SwaggerClientBuilder {
                     str += `    async ${method.operationId}(args) {\n`;
                     str += `        return new Promise(async (resolve, reject) => {\n`;
                     str += `            try {\n`;
-                    str += `                const { params = {}, query = {}, body = {}, options = {} } = args;\n`;
+                    str += `                const { params = {}, query = {}, body = {}, options = {} } = args;\n\n`;
                     // Add validation
-                    if (validation) {
-                        str += `                const id = "${path}/${methodKey}";\n`;
+                    if (validation && Object.keys(primeSchema).length > 0) {
+                        str += `                const id = "/${method.operationId}";\n`;
                         // Validate query
                         if (primeSchema.query) {
                             str += `                const queryValidation = this.validator.validate(query, {\n`;
                             str += `                    id,\n`;
                             str += `                    ...${JSON.stringify(primeSchema.query, null, 2)}\n`;
                             str += `                });\n`;
-                            str += `                if (queryValidation?.errors?.length > 0) throw new Error(queryValidation.errors);\n`;
+                            str += `                if (queryValidation?.errors?.length > 0) throw new Error(queryValidation.errors);\n\n`;
                         }
                         // Validate params
                         if (primeSchema.path) {
@@ -375,7 +370,7 @@ class SwaggerClientBuilder {
                             str += `                    id,\n`;
                             str += `                    ...${JSON.stringify(primeSchema.path, null, 2)}\n`;
                             str += `                });\n`;
-                            str += `                if (paramsValidation?.errors?.length > 0) throw new Error(paramsValidation.errors);\n`;
+                            str += `                if (paramsValidation?.errors?.length > 0) throw new Error(paramsValidation.errors);\n\n`;
                         }
                         // Validate body
                         if (primeSchema.body) {
@@ -383,7 +378,7 @@ class SwaggerClientBuilder {
                             str += `                    id,\n`;
                             str += `                    ...${JSON.stringify(primeSchema.body, null, 2)}\n`;
                             str += `                });\n`;
-                            str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n`;
+                            str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n\n`;
                         }
                     }
 
@@ -395,7 +390,6 @@ class SwaggerClientBuilder {
                         const requestContentTypes = method?.requestBody?.content || {};
                         const contentTypeKeys = Object.keys(requestContentTypes);
 
-                        console.log(contentTypeKeys)
                         // Set content-type to first content type if content type didn't match
                         if (contentTypeKeys[0]) {
                             contentType = contentTypeKeys[0];
@@ -405,12 +399,16 @@ class SwaggerClientBuilder {
 
                         if (validation) {
                             // Validate requestBody component schema
-                            const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
+                            let requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
 
                             if (requestBodySchema) {
+                                requestBodySchema = {
+                                    id: `/${method.operationId}/requestBody`,
+                                    ...requestBodySchema
+                                }
                                 // Validate body
                                 str += `                const bodyValidation = this.validator.validate(body, ${JSON.stringify(requestBodySchema, null, 2)});\n`;
-                                str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n`;
+                                str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n\n`;
                             }
                         }
 
@@ -441,10 +439,7 @@ class SwaggerClientBuilder {
                     }
 
                     // Convert params object to query string
-                    str += `                const queryString = new URLSearchParams(query).toString();\n`;
-                    str += `                const path = "${path}";\n`;
-                    str += `                const urlPath = path.replace(/{(.*?)}/g, (m, c) => params[c]);\n`;
-                    str += `                const url = \`\${urlPath}\${queryString ? \`?\${queryString}\` : ""}\`;\n`;
+                    str += `                const url = convertUrl("${path}", params, query);\n`;
                     str += `                const response = await this.instance({\n`;
                     str += `                    method: "${methodKey}",\n`;
                     str += `                    url,\n`;
@@ -457,7 +452,7 @@ class SwaggerClientBuilder {
                     str += `                reject(error);\n`;
                     str += `            }\n`;
                     str += `        });\n`;
-                    str += `    }\n\n`;
+                    str += `    }\n`;
                 }
             }
         }
@@ -465,11 +460,13 @@ class SwaggerClientBuilder {
         str += `}\n\n`;
         str += `module.exports = Client;`;
 
-        const formattedCode = beautify(str, { indent_size: 2, space_in_empty_paren: true });
+        // Beautify code
+        const beautifiedCode = beautify(str, { indent_size: 2, space_in_empty_paren: true });
 
-        await fs.writeFile(filePath, formattedCode);
+        // Write to file
+        await fs.writeFile(filePath, beautifiedCode);
 
-        return formattedCode;
+        return beautifiedCode;
     }
 }
 
