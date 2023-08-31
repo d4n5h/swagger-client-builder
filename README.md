@@ -93,6 +93,10 @@ And then run:
 swagger-client-builder -i ./path/to/swagger.json -o ./path/to/output.js -v true
 ```
 
--v / --validation = true / false
+#### Arguments
+
 -i / --input = swagger.json file path
+
 -o / --output = Output js file
+
+-v / --validation = true / false
