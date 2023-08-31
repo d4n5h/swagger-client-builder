@@ -1,9 +1,14 @@
+#!/usr/bin/env node
+
 const beautify = require('js-beautify/js').js,
     { Validator } = require("jsonschema"),
     axios = require("axios"),
     FormData = require("form-data"),
     xml2js = require('xml2js'),
-    fs = require('fs').promises;
+    fs = require('fs').promises,
+    { ArgumentParser } = require('argparse'),
+    { version } = require('./package.json');
+
 const methods = ["get", "post", "put", "patch", "delete", "options", "head", "trace"];
 
 // Custom error types
@@ -467,6 +472,45 @@ class SwaggerClientBuilder {
         await fs.writeFile(filePath, beautifiedCode);
 
         return beautifiedCode;
+    }
+}
+
+if (require.main === module) {
+    // Run as script
+    try {
+        const path = require('path');
+        const fs = require('fs');
+    
+        const parser = new ArgumentParser({
+            description: 'Swagger Client Builder',
+        });
+    
+        parser.add_argument('-i', '--input', { help: 'Input swagger json file', required: true });
+        parser.add_argument('-o', '--output', { help: 'Output file', required: true });
+        parser.add_argument('-v', '--validation', { help: 'Add validation' });
+        parser.add_argument('-V', '--version', { help: 'Show version', action: 'version', version });
+    
+        const args = parser.parse_args();
+    
+        const input = path.resolve(args.input);
+    
+        if (!fs.existsSync(input)) throw new Error(`File "${input}" not found`);
+    
+        const output = path.resolve(args.output);
+        const validation = args.validation || false;
+    
+        (async () => {
+            try {
+                const swaggerJson = require(input);
+                const builder = new SwaggerClientBuilder(swaggerJson);
+                await builder.export(output, { validation });
+                console.log(`Swagger client exported to ${output}`);
+            } catch (error) {
+                console.error(error.message);
+            }
+        })();
+    } catch (error) {
+        console.error(error.message);
     }
 }
 

@@ -78,3 +78,21 @@ async function main() {
 
 main();
 ```
+
+### Export from CLI (Only words if operationId is defined)
+
+You can install the package globally using
+
+```bash
+npm i swagger-client-builder -g
+```
+
+And then run:
+
+```bash
+swagger-client-builder -i ./path/to/swagger.json -o ./path/to/output.js -v true
+```
+
+-v / --validation = true / false
+-i / --input = swagger.json file path
+-o / --output = Output js file
