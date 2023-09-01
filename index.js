@@ -5,9 +5,7 @@ const beautify = require('js-beautify/js').js,
     axios = require("axios"),
     FormData = require("form-data"),
     xml2js = require('xml2js'),
-    fs = require('fs').promises,
-    { ArgumentParser } = require('argparse'),
-    { version } = require('./package.json');
+    fs = require('fs').promises;
 
 const methods = ["get", "post", "put", "patch", "delete", "options", "head", "trace"];
 
@@ -177,13 +175,9 @@ class SwaggerClientBuilder {
                     // Convert parameters to jsonschema
                     const primeSchema = this._prepareParameters(parameters);
 
-
-                    primeObject[path][methodKey] = async function () {
+                    primeObject[path][methodKey] = async function (args) {
                         return new Promise(async (resolve, reject) => {
                             try {
-                                // Get parameters from arguments
-                                const [args = {}] = arguments;
-
                                 let { params = {}, query = {}, body = {}, options = {} } = args;
 
                                 const id = `${path}/${methodKey}`;
@@ -207,7 +201,6 @@ class SwaggerClientBuilder {
 
                                     if (paramsValidation?.errors?.length > 0) throw new ParamsValidationError(paramsValidation.errors);
                                 }
-
 
                                 // Validate body
                                 if (primeSchema.body) {
@@ -323,12 +316,7 @@ class SwaggerClientBuilder {
         str += `        this.instance = axios.create(options);\n`;
 
         // Add validator and components
-        if (validation) {
-            str += `        this.validator = new Validator();\n`;
-            // Add components and definitions
-            // str += `        this.components = ${JSON.stringify(this.components, null, 2)};\n`;
-            // str += `        this.definitions = ${JSON.stringify(this.definitions, null, 2)};\n`;
-        }
+        if (validation) str += `        this.validator = new Validator();\n`;
 
         str += `    }\n\n`;
 
@@ -478,27 +466,28 @@ class SwaggerClientBuilder {
 if (require.main === module) {
     // Run as script
     try {
-        const path = require('path');
-        const fs = require('fs');
-    
+        const path = require('path'), fs = require('fs'),
+            { ArgumentParser } = require('argparse'),
+            { version } = require('./package.json');
+
         const parser = new ArgumentParser({
             description: 'Swagger Client Builder',
         });
-    
+
         parser.add_argument('-i', '--input', { help: 'Input swagger json file', required: true });
         parser.add_argument('-o', '--output', { help: 'Output file', required: true });
         parser.add_argument('-v', '--validation', { help: 'Add validation' });
         parser.add_argument('-V', '--version', { help: 'Show version', action: 'version', version });
-    
+
         const args = parser.parse_args();
-    
+
         const input = path.resolve(args.input);
-    
+
         if (!fs.existsSync(input)) throw new Error(`File "${input}" not found`);
-    
+
         const output = path.resolve(args.output);
         const validation = args.validation || false;
-    
+
         (async () => {
             try {
                 const swaggerJson = require(input);
