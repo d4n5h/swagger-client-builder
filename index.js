@@ -67,6 +67,9 @@ class SwaggerClientBuilder {
             this.components = this.api?.components?.schemas || {};
             this.definitions = this.api?.definitions || {};
 
+            // Check if operationIds are present
+            if (!this._checkOperationIds()) throw new Error("OperationIds are required for all paths");
+
             const options = {};
 
             // Set baseURL if host and basePath are present in swagger doc
@@ -96,6 +99,20 @@ class SwaggerClientBuilder {
         } catch (error) {
             throw error;
         }
+    }
+
+    _checkOperationIds() {
+        const { paths } = this;
+
+        for (const path in paths) {
+            const methods = paths[path];
+            for (const methodKey in methods) {
+                const method = methods[methodKey];
+                if (!method?.operationId || method?.operationId == "") return false;
+            }
+        }
+
+        return true;
     }
 
     _prepareParameters(parameters) {
