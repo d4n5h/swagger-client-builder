@@ -34,7 +34,7 @@ npm install swagger-client-builder
 yarn add swagger-client-builder
 ```
 
-### CLI Usage (Only works if operationId is defined)
+### CLI Usage
 
 You can install the package globally using
 
@@ -73,8 +73,6 @@ async function main() {
 
         await Client.build();
 
-        // If operationId is defined in swagger
-
         const response = await Client.getPetById({
             params: { petId: 1 }
             /*
@@ -90,16 +88,8 @@ async function main() {
 
         console.log(response.data);
 
-        // Or
 
-        const response2 = await Client.get('/pet/{petId}', {
-            params: {
-                petId: 1,
-            }
-        });
-
-
-        // You can also export the client to a file, but operationId is required in this case
+        // You can also export the client to a file from code (as well as using the CLI)
         await Client.export('./client.js',{
             validation: true,
         });
