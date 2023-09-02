@@ -56,7 +56,7 @@ class SwaggerClientBuilder {
         try {
             const api = await SwaggerParser.validate(this.swaggerFile, {
                 dereference: {
-                    circular: true,
+                    circular: false,
                 }
             });
 
@@ -458,9 +458,9 @@ if (require.main === module) {
             try {
                 const Client = new SwaggerClientBuilder(args.input);
 
-                const builder = await Client.build();
+                await Client.build();
 
-                await builder.export(output, { validation });
+                await Client.export(output, { validation });
 
                 console.log(`Swagger client exported to ${output}`);
 

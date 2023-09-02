@@ -3,19 +3,23 @@
 Automatically generate an API client on top of Axios using Swagger document.
 Basically using the Swagger document to generate a client in reverse.
 
-1. It uses the Swagger schema for input validation and it resolves all the schema references.
+## Features
 
-2. It automatically gets the content-type from the requestBody and converts the body accordingly, if there's no content-type to the requestBody then it will fallback to JSON.
+1. Create methods from operationIds and if not defined then it will fallback to `.get("/path/name/{id}")` / `.post("/path/name")`, etc...
 
-3. If operationIds are defined, it will use them as method names, or you can use `.get("/path/name/{id}")` / `.post("/path/name")`, etc...
+2. Optionally it can use the Swagger schema for input validation.
 
-4. It will try to resolve the protocol, host and base path. But if the Swagger document doesn't contain them then you'll need to define them in the axios config.
+3. Automatically converts the body to the correct content-type, but you can manually override it by defining the content-type in the axios request options.
 
-5. Don't use operationIds that are like method types (e.g "get", "post", "put", "delete", etc...)
+4. If the protocol, host and base path are defined then it will use it as baseURL, but you can manually override it by defining the content-type in the axios request options.
 
-6. Currently it supports Swagger v2 and OpenAPI v3.
+5. Support for Swagger v2 and OpenAPI v3.
 
-7. If operationId is defined for paths then you can also export the client as a standalone file using the `export()` function or use the CLI (example provided in this readme).
+6. Can be installed as a global package and export a standalone API client via the CLI. (Only works if operationId is defined).
+
+## Caveats
+
+1. You can't use operationIds that are like method types (e.g "get", "post", "put", "delete", etc...) except if you export the client via the CLI.
 
 ## Install
 
@@ -29,7 +33,29 @@ npm install swagger-client-builder
 yarn add swagger-client-builder
 ```
 
-## Example
+### CLI Usage (Only works if operationId is defined)
+
+You can install the package globally using
+
+```bash
+npm i swagger-client-builder -g
+```
+
+And then run:
+
+```bash
+swagger-client-builder -i https://petstore3.swagger.io/api/v3/openapi.json -o /path/to/output.js -v true
+```
+
+#### Arguments
+
+-i / --input = swagger file path or URL
+
+-o / --output = Output js file
+
+-v / --validation = true / false
+
+## Code Example
 
 ```javascript
 const SwaggerClientBuilder = require("swagger-client-builder");
@@ -44,35 +70,36 @@ async function main() {
             baseURL: 'https://petstore3.swagger.io/api/v3'
         })
 
-        const client = await Client.build();
+        await Client.build();
 
         // If operationId is defined in swagger
 
-        const response = await client.getPetById({
-            params: { petId: 1 },
+        const response = await Client.getPetById({
+            params: { petId: 1 }
+            /*
+            query:{},
+            body:{},
+
+            // Axios request options
+            options:{
+                headers:{...}
+            }
+            */
         });
 
         console.log(response.data);
 
         // Or
 
-        const response2 = await client.get('/pet/{petId}', {
+        const response2 = await Client.get('/pet/{petId}', {
             params: {
                 petId: 1,
-            },
-            /*
-            query:{},
-            body:{},
-            options:{
-                // Axios request options
-                headers:{...}
             }
-            */
         });
 
 
         // You can also export the client to a file, but operationId is required in this case
-        await client.export('./client.js',{
+        await Client.export('./client.js',{
             validation: true,
         });
 
@@ -83,25 +110,3 @@ async function main() {
 
 main();
 ```
-
-### Export from CLI (Only works if operationId is defined)
-
-You can install the package globally using
-
-```bash
-npm i swagger-client-builder -g
-```
-
-And then run:
-
-```bash
-swagger-client-builder -i ./path/to/swagger.json -o ./path/to/output.js -v true
-```
-
-#### Arguments
-
--i / --input = swagger file path or URL
-
--o / --output = Output js file
-
--v / --validation = true / false
