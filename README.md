@@ -1,6 +1,6 @@
 # Swagger API Client Builder
 
-Automatically generate an API client on top of Axios using Swagger JSON document.
+Automatically generate an API client on top of Axios using Swagger document.
 Basically using the Swagger document to generate a client in reverse.
 
 1. It uses the Swagger schema for input validation and it resolves all the schema references.
@@ -13,9 +13,9 @@ Basically using the Swagger document to generate a client in reverse.
 
 5. Don't use operationIds that are like method types (e.g "get", "post", "put", "delete", etc...)
 
-6. Currently it supports Swagger v2 and OpenAPI v3, but it might support other versions. If it doesn't then you can open an issue or create a pull request.
+6. Currently it supports Swagger v2 and OpenAPI v3.
 
-7. If operationId is defined for paths then you can also export the client as a standalone file using the `export()` function.
+7. If operationId is defined for paths then you can also export the client as a standalone file using the `export()` function or use the CLI (example provided in this readme).
 
 ## Install
 
@@ -33,18 +33,30 @@ yarn add swagger-client-builder
 
 ```javascript
 const SwaggerClientBuilder = require("swagger-client-builder");
-const axios = require("axios");
 
 async function main() {
     try {
-        const swaggerJson = await axios.get('https://petstore3.swagger.io/api/v3/openapi.json');
 
-        const Client = new SwaggerClientBuilder(swaggerJson.data, {
+        const swaggerFile = 'https://petstore3.swagger.io/api/v3/openapi.json'; // Or use file path
+
+        const Client = new SwaggerClientBuilder(swaggerFile, {
             // Optional: Axios instance config
             baseURL: 'https://petstore3.swagger.io/api/v3'
         })
 
-        const response = await Client.get('/pet/{petId}', {
+        const client = await Client.build();
+
+        // If operationId is defined in swagger
+
+        const response = await client.getPetById({
+            params: { petId: 1 },
+        });
+
+        console.log(response.data);
+
+        // Or
+
+        const response2 = await client.get('/pet/{petId}', {
             params: {
                 petId: 1,
             },
@@ -58,16 +70,9 @@ async function main() {
             */
         });
 
-        // Or (if operationId is defined in swagger)
-
-        const response2 = await Client.getPetById({
-            params: { petId: 1 },
-        });
-
-        console.log(response.data);
 
         // You can also export the client to a file, but operationId is required in this case
-        await Client.export('./client.js',{
+        await client.export('./client.js',{
             validation: true,
         });
 
@@ -95,7 +100,7 @@ swagger-client-builder -i ./path/to/swagger.json -o ./path/to/output.js -v true
 
 #### Arguments
 
--i / --input = swagger.json file path
+-i / --input = swagger file path or URL
 
 -o / --output = Output js file
 

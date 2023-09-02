@@ -5,7 +5,8 @@ const beautify = require('js-beautify/js').js,
     axios = require("axios"),
     FormData = require("form-data"),
     xml2js = require('xml2js'),
-    fs = require('fs').promises;
+    fs = require('fs').promises,
+    SwaggerParser = require('swagger-parser');
 
 const methods = ["get", "post", "put", "patch", "delete", "options", "head", "trace"];
 
@@ -39,92 +40,61 @@ class SwaggerClientBuilder {
      * @returns {Function} SwaggerClientBuilder instance
      * @constructor SwaggerClientBuilder
      */
-    constructor(swaggerJson, options) {
-        if (!swaggerJson) throw new Error("swaggerJson is required");
-
-        try {
-            JSON.parse(JSON.stringify(swaggerJson));
-        } catch (error) {
-            throw new Error("swaggerJson is not valid");
-        }
-
-        this.validator = new Validator();
-
-        // TODO: Replace _resolveRefs with this.validator.addSchema
-        // TODO: Add support for securityDefinitions
-
-        this.swaggerJson = swaggerJson;
-        this.paths = swaggerJson?.paths || {};
-        this.components = swaggerJson?.components?.schemas || {};
-        this.definitions = swaggerJson?.definitions || {};
-
-        this.swaggerJson = this._resolveRefs(this.swaggerJson)
-
-        // Reassign after resolving refs
-        this.definitions = this.swaggerJson?.definitions || {};
-        this.components = this.swaggerJson?.components?.schemas || {};
-
-        this.options = {};
-
-        if (!options) options = {};
-
-        // Set baseURL if host and basePath are present in swagger doc
-        this.host = swaggerJson?.host || null;
-        this.basePath = swaggerJson?.basePath || null;
-        this.protocol = swaggerJson?.schemes?.[0] || "http";
-
-        if (this.host) options.baseURL = `${this.protocol}://${this.host}${this.basePath}`;
-
-        // Set options
-        this.options = { ...options, ...this.options };
-
-        this.instance = axios.create(this.options);
-
-        // Build paths
-        this.builtPaths = this._buildPaths();
-
-        // Add methods
-        for (const method of methods) {
-            this[method] = async function (path, args) {
-                if (!this?.builtPaths?.[path]?.[method]) throw new Error(`Method "${method.toUpperCase()}->${path}" not found`);
-                return this.builtPaths[path][method](args);
-            }
-        }
+    constructor(swaggerFile, options) {
+        this.swaggerFile = swaggerFile;
+        this.paths = {};
+        this.components = {};
+        this.definitions = {};
+        this.options = options || {};
+        this.api = {}
+        this.validator = null;
+        this.instance = null;
+        this.builtPaths = {};
     }
 
-    _resolveRefs(obj) {
-        // Recursively Loop through object keys to find $ref and resolve it
-        if (typeof obj == 'object') {
-            for (const key in obj) {
-                if (obj[key]?.$ref) {
-                    obj[key] = this._resolveRef(obj[key].$ref);
-                    obj[key] = this._resolveRefs(obj[key])
-                } else if (typeof obj[key] === 'object') {
-                    obj[key] = this._resolveRefs(obj[key])
+    async build() {
+        try {
+            const api = await SwaggerParser.validate(this.swaggerFile, {
+                dereference: {
+                    circular: true,
+                }
+            });
+
+            this.validator = new Validator();
+
+            this.api = api;
+            this.paths = this.api?.paths || {};
+            this.components = this.api?.components?.schemas || {};
+            this.definitions = this.api?.definitions || {};
+
+            const options = {};
+
+            // Set baseURL if host and basePath are present in swagger doc
+            this.host = this.api?.host || null;
+            this.basePath = this.api?.basePath || null;
+            this.protocol = this.api?.schemes?.[0] || "http";
+
+            if (this.host) options.baseURL = `${this.protocol}://${this.host}${this.basePath}`;
+
+            // Set options
+            if (!this?.options?.baseURL && options.baseURL) this.options = { ...options, ...this.options };
+
+            this.instance = axios.create(this.options);
+
+            // Build paths
+            this.builtPaths = this._buildPaths();
+
+            // Add methods
+            for (const method of methods) {
+                this[method] = async function (path, args) {
+                    if (!this?.builtPaths?.[path]?.[method]) throw new Error(`Method "${method.toUpperCase()}->${path}" not found`);
+                    return this.builtPaths[path][method](args);
                 }
             }
-        }
 
-        return obj
-    }
-
-    _resolveRef(ref) {
-        const split = ref.split("/");
-
-        // Get location
-        let location = split[1];
-
-        if (!["definitions", "components"].includes(location)) location = split[2];
-
-        const componentName = split[split.length - 1];
-
-        const component = this?.[location]?.[componentName];
-
-        if (component) {
-            return component;
-        } else {
-            // Not found
-            return {};
+            return this;
+        } catch (error) {
+            throw error;
         }
     }
 
@@ -474,26 +444,26 @@ if (require.main === module) {
             description: 'Swagger Client Builder',
         });
 
-        parser.add_argument('-i', '--input', { help: 'Input swagger json file', required: true });
+        parser.add_argument('-i', '--input', { help: 'Input swagger file path or URL', required: true });
         parser.add_argument('-o', '--output', { help: 'Output file', required: true });
         parser.add_argument('-v', '--validation', { help: 'Add validation' });
         parser.add_argument('-V', '--version', { help: 'Show version', action: 'version', version });
 
         const args = parser.parse_args();
 
-        const input = path.resolve(args.input);
-
-        if (!fs.existsSync(input)) throw new Error(`File "${input}" not found`);
-
         const output = path.resolve(args.output);
         const validation = args.validation || false;
 
         (async () => {
             try {
-                const swaggerJson = require(input);
-                const builder = new SwaggerClientBuilder(swaggerJson);
+                const Client = new SwaggerClientBuilder(args.input);
+
+                const builder = await Client.build();
+
                 await builder.export(output, { validation });
+
                 console.log(`Swagger client exported to ${output}`);
+
             } catch (error) {
                 console.error(error.message);
             }
