@@ -1,11 +1,12 @@
 # Swagger API Client Builder
 
 Automatically generate an API client on top of Axios using Swagger document.
+
 Basically using the Swagger document to generate a client in reverse.
 
 ## Features
 
-1. Create methods from operationIds and if not defined then it will fallback to `.get("/path/name/{id}")` / `.post("/path/name")`, etc...
+1. Create methods from operationIds.
 
 2. Optionally it can use the Swagger schema for input validation.
 
@@ -15,11 +16,11 @@ Basically using the Swagger document to generate a client in reverse.
 
 5. Support for Swagger v2 and OpenAPI v3.
 
-6. Can be installed as a global package and export a standalone API client via the CLI. (Only works if operationId is defined).
+6. Can be installed as a global package and export a standalone API client via the CLI.
 
 ## Caveats
 
-1. You can't use operationIds that are like method types (e.g "get", "post", "put", "delete", etc...) except if you export the client via the CLI.
+1. **"operationId"** property is required for all paths.
 
 ## Install
 
@@ -110,3 +111,7 @@ async function main() {
 
 main();
 ```
+
+## TODO
+
+1. **Add support:** export to TypeScript.
