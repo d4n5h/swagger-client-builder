@@ -6,9 +6,9 @@ const beautify = require('js-beautify/js').js,
     FormData = require("form-data"),
     xml2js = require('xml2js'),
     fs = require('fs').promises,
-    SwaggerParser = require('swagger-parser');
-
-const methods = ["get", "post", "put", "patch", "delete", "options", "head", "trace"];
+    SwaggerParser = require('swagger-parser'),
+    { URLSearchParams } = require('url'),
+    chalk = require('chalk');
 
 // Custom error types
 class QueryValidationError extends Error {
@@ -86,14 +86,6 @@ class SwaggerClientBuilder {
 
             // Build paths
             this.builtPaths = this._buildPaths();
-
-            // Add methods
-            for (const method of methods) {
-                this[method] = async function (path, args) {
-                    if (!this?.builtPaths?.[path]?.[method]) throw new Error(`Method "${method.toUpperCase()}->${path}" not found`);
-                    return this.builtPaths[path][method](args);
-                }
-            }
 
             return this;
         } catch (error) {
@@ -281,17 +273,49 @@ class SwaggerClientBuilder {
         }
     }
 
+    _removeProperties(obj, properties) {
+        const newObj = { ...obj };
+        properties.forEach((property) => {
+            delete newObj[property];
+        });
+
+        return newObj;
+    }
+
     async export(filePath, options) {
         const validation = options?.validation || false;
+        const es = options?.es || false;
+        const ts = options?.ts || false;
 
-        let addedXml2js = false;
+        const dependencies = ['axios'];
 
-        let str = `const axios = require("axios");\n`;
+        let addedXml2js = false, addedFormData = false;
+        let str = '';
 
-        if (validation) str += `const { Validator } = require("jsonschema");\n`;
+        if (es || ts) {
+            str = `import axios${ts ? ', { CreateAxiosDefaults }' : ''} from "axios";\n`;
+        } else {
+            str = `const axios = require("axios");\n`;
+        }
+
+        // Add URLSearchParams
+        if (es || ts) {
+            str += `import { URLSearchParams } from "url";\n`;
+        } else {
+            str += `const { URLSearchParams } = require("url");\n`;
+        }
+
+        if (validation) {
+            dependencies.push('jsonschema');
+            if (es || ts) {
+                str += `import { Validator } from "jsonschema";\n`;
+            } else {
+                str += `const { Validator } = require("jsonschema");\n`;
+            }
+        }
 
         // Add convert url function
-        str += `\nconst convertUrl = (path, params, query) => {\n`;
+        str += `\nconst convertUrl = (${ts ? 'path:string, params:object | {}, query:any | {}' : 'path, params, query'}) => {\n`;
         str += `    const queryString = new URLSearchParams(query).toString();\n`;
         str += `    const urlPath = path.replace(/{(.*?)}/g, (m, c) => params[c]);\n`;
         str += `    const url = \`\${urlPath}\${queryString ? \`?\${queryString}\` : ""}\`;\n`;
@@ -299,7 +323,11 @@ class SwaggerClientBuilder {
         str += `};\n`;
 
         str += `\nclass Client {\n`;
-        str += `    constructor(options) {\n`;
+        if (ts) {
+            str += `    instance: any;\n`;
+            str += `    validator: Validator;\n\n`;
+        }
+        str += `    constructor(options${ts ? ': CreateAxiosDefaults<any> | {}' : ''}) {\n`;
         str += `        this.instance = axios.create(options);\n`;
 
         // Add validator and components
@@ -329,36 +357,54 @@ class SwaggerClientBuilder {
                     str += `     * @param {Object} args.options Axios request options\n`;
                     str += `     * @returns {Promise<Object>} Response\n`;
                     str += `     */\n`;
-                    str += `    async ${method.operationId}(args) {\n`;
+                    str += `    async ${method.operationId}(args${ts ? ': { params: object | {}; query: object | {}; body: any | {}; options:any | {}; }' : ''})${ts ? ': Promise<object>' : ''} {\n`;
                     str += `        return new Promise(async (resolve, reject) => {\n`;
                     str += `            try {\n`;
                     str += `                const { params = {}, query = {}, body = {}, options = {} } = args;\n\n`;
                     // Add validation
                     if (validation && Object.keys(primeSchema).length > 0) {
-                        str += `                const id = "/${method.operationId}";\n`;
+                        str += `                const id = "/${method.operationId}";\n\n`;
                         // Validate query
                         if (primeSchema.query) {
                             str += `                const queryValidation = this.validator.validate(query, {\n`;
                             str += `                    id,\n`;
                             str += `                    ...${JSON.stringify(primeSchema.query, null, 2)}\n`;
-                            str += `                });\n`;
-                            str += `                if (queryValidation?.errors?.length > 0) throw new Error(queryValidation.errors);\n\n`;
+                            str += `                });\n\n`;
+                            if (ts) {
+                                str += `                queryValidation.errors?.forEach((error: any) => {\n`;
+                                str += `                    throw new Error(error);\n`;
+                                str += `                });\n\n`;
+                            } else {
+                                str += `                if (queryValidation?.errors?.length > 0) throw new Error(queryValidation.errors);\n\n`;
+                            }
                         }
                         // Validate params
                         if (primeSchema.path) {
                             str += `                const paramsValidation = this.validator.validate(params, {\n`;
                             str += `                    id,\n`;
                             str += `                    ...${JSON.stringify(primeSchema.path, null, 2)}\n`;
-                            str += `                });\n`;
-                            str += `                if (paramsValidation?.errors?.length > 0) throw new Error(paramsValidation.errors);\n\n`;
+                            str += `                });\n\n`;
+                            if (ts) {
+                                str += `                paramsValidation.errors?.forEach((error: any) => {\n`;
+                                str += `                    throw new Error(error);\n`;
+                                str += `                });\n\n`;
+                            } else {
+                                str += `                if (paramsValidation?.errors?.length > 0) throw new Error(paramsValidation.errors);\n\n`;
+                            }
                         }
                         // Validate body
                         if (primeSchema.body) {
                             str += `                const bodyValidation = this.validator.validate(body, {\n`;
                             str += `                    id,\n`;
                             str += `                    ...${JSON.stringify(primeSchema.body, null, 2)}\n`;
-                            str += `                });\n`;
-                            str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n\n`;
+                            str += `                });\n\n`;
+                            if (ts) {
+                                str += `                bodyValidation.errors?.forEach((error: any) => {\n`;
+                                str += `                    throw new Error(error);\n`;
+                                str += `                });\n\n`;
+                            } else {
+                                str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n\n`;
+                            }
                         }
                     }
 
@@ -395,38 +441,58 @@ class SwaggerClientBuilder {
                         // Convert body to content-type
                         if (contentType == "multipart/form-data") {
                             // Convert body to form data
-                            str += `                const FormData = require("form-data");\n`;
+
+                            // add form-data dependency
+                            if (!addedFormData) {
+                                dependencies.push('form-data');
+                                if (es || ts) {
+                                    str = `import FormData from "form-data";\n` + str;
+                                } else {
+                                    str = `const FormData = require("form-data");\n` + str;
+                                }
+
+                                addedFormData = true;
+                            }
+
                             str += `                const formData = new FormData();\n`;
                             str += `                for (const key in body) formData.append(key, body[key]);\n`;
                             str += `                body = formData;\n`;
                         } else if (contentType == "application/x-www-form-urlencoded") {
                             // Convert body to url encoded
-                            str += `                const URLSearchParams = require("url").URLSearchParams;\n`;
                             str += `                body = new URLSearchParams(body).toString();\n`;
+
                         } else if (contentType == "application/xml") {
+
                             // add xml2js dependency
                             if (!addedXml2js) {
-                                str = `const xml2js = require('xml2js');\n` + str;
+                                dependencies.push('xml2js');
+                                if (es || ts) {
+                                    str = `import xml2js from "xml2js";\n` + str;
+                                } else {
+                                    str = `const xml2js = require('xml2js');\n` + str;
+                                }
+
                                 addedXml2js = true;
                             }
+
                             // Convert body to xml
                             str += `                const builder = new xml2js.Builder();\n`;
-                            str += `                body = builder.buildObject(body);\n`;
+                            str += `                body = builder.buildObject(body);\n\n`;
                         }
                         // Add content-type header
                         str += `                if (!options?.headers) options.headers = {};\n`;
-                        str += `                options.headers["content-type"] = "${contentType}";\n`;
+                        str += `                options.headers["content-type"] = "${contentType}";\n\n`;
                     }
 
                     // Convert params object to query string
-                    str += `                const url = convertUrl("${path}", params, query);\n`;
+                    str += `                const url = convertUrl("${path}", params, query);\n\n`;
                     str += `                const response = await this.instance({\n`;
                     str += `                    method: "${methodKey}",\n`;
                     str += `                    url,\n`;
                     str += `                    params,\n`;
                     str += `                    data: body,\n`;
                     str += `                    ...options,\n`;
-                    str += `                });\n`;
+                    str += `                });\n\n`;
                     str += `                resolve(response);\n`;
                     str += `            } catch (error) {\n`;
                     str += `                reject(error);\n`;
@@ -446,7 +512,7 @@ class SwaggerClientBuilder {
         // Write to file
         await fs.writeFile(filePath, beautifiedCode);
 
-        return beautifiedCode;
+        return dependencies;
     }
 }
 
@@ -458,35 +524,40 @@ if (require.main === module) {
             { version } = require('./package.json');
 
         const parser = new ArgumentParser({
-            description: 'Swagger Client Builder',
+            description: chalk.bold.blue('Swagger Client Builder'),
         });
 
         parser.add_argument('-i', '--input', { help: 'Input swagger file path or URL', required: true });
         parser.add_argument('-o', '--output', { help: 'Output file', required: true });
         parser.add_argument('-v', '--validation', { help: 'Add validation' });
+        parser.add_argument('-e', '--es', { help: 'Use ES module import instead of CommonJs' });
         parser.add_argument('-V', '--version', { help: 'Show version', action: 'version', version });
 
         const args = parser.parse_args();
 
         const output = path.resolve(args.output);
+        // get extension of output file
+        const ext = path.extname(output);
+
         const validation = args.validation || false;
+        const es = args.es || false;
+        const ts = ext == '.ts' || false;
 
         (async () => {
-            try {
-                const Client = new SwaggerClientBuilder(args.input);
+            const Client = new SwaggerClientBuilder(args.input);
 
-                await Client.build();
+            await Client.build();
 
-                await Client.export(output, { validation });
+            const dependencies = await Client.export(output, { validation, es, ts });
 
-                console.log(`Swagger client exported to ${output}`);
+            console.log(chalk.bold.green(`Swagger client exported to ${output}\n`));
 
-            } catch (error) {
-                console.error(error.message);
-            }
+            console.log(chalk.bold.bgBlue(`Remember to install dependencies:\n`))
+
+            console.log(`npm install ${dependencies.join(' ')}\n\nOr:\n\nyarn add ${dependencies.join(' ')}\n`);
         })();
     } catch (error) {
-        console.error(error.message);
+        console.error(chalk.bold.red(error.message));
     }
 }
 

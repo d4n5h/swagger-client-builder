@@ -6,21 +6,23 @@ Basically using the Swagger document to generate a client in reverse.
 
 ## Features
 
-1. Create methods from operationIds.
+* Create methods from operationIds.
 
-2. Optionally it can use the Swagger schema for input validation.
+* Optionally it can use the Swagger schema for input validation.
 
-3. Automatically converts the body to the correct content-type, but you can manually override it by defining the content-type in the axios request options.
+* Automatically converts the body to the correct content-type, but you can manually override it by defining the content-type in the axios request options.
 
-4. If the protocol, host and base path are defined then it will use it as baseURL, but you can manually override it by defining the content-type in the axios request options.
+* If the protocol, host and base path are defined then it will use it as baseURL, but you can manually override it by defining the content-type in the axios request options.
 
-5. Support for Swagger v2 and OpenAPI v3.
+* Supports Swagger v2 and OpenAPI v3.
 
-6. Can be installed as a global package and export a standalone API client via the CLI.
+* Can be installed as a global package and export a standalone API client via the CLI.
+
+* CLI can export both JavaScript and TypeScript (extension detected from output path)
 
 ## Caveats
 
-1. **"operationId"** property is required for all paths.
+* **operationId** property is required for all paths.
 
 ## Install
 
@@ -34,27 +36,46 @@ npm install swagger-client-builder
 yarn add swagger-client-builder
 ```
 
-### CLI Usage
+### CLI
 
-You can install the package globally using
+You can install the package globally using:
 
 ```bash
 npm i swagger-client-builder -g
 ```
 
-And then run:
+#### Usage
 
 ```bash
-swagger-client-builder -i https://petstore3.swagger.io/api/v3/openapi.json -o /path/to/output.js -v true
+usage: swagger-client-builder [-h] -i INPUT -o OUTPUT [-v VALIDATION] [-e ES] [-V]
+
+Swagger Client Builder
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        Input swagger file path or URL
+  -o OUTPUT, --output OUTPUT
+                        Output file
+  -v VALIDATION, --validation VALIDATION
+                        Add validation
+  -e ES, --es ES        Use ES module import instead of CommonJs
+  -V, --version         Show version
 ```
 
-#### Arguments
+#### Example
 
--i / --input = swagger file path or URL
+##### JavaScript
 
--o / --output = Output js file
+```bash
+swagger-client-builder -i https://petstore3.swagger.io/api/v3/openapi.json -o ./path/to/output.js -v true
+```
 
--v / --validation = true / false
+##### TypeScript
+
+```bash
+swagger-client-builder -i https://petstore3.swagger.io/api/v3/openapi.json -o ./path/to/output.ts -v true
+```
 
 ## Code Example
 
@@ -89,7 +110,7 @@ async function main() {
         console.log(response.data);
 
 
-        // You can also export the client to a file from code (as well as using the CLI)
+        // You can also export the client to a file from code
         await Client.export('./client.js',{
             validation: true,
         });
@@ -101,7 +122,3 @@ async function main() {
 
 main();
 ```
-
-## TODO
-
-1. **Add support:** export to TypeScript.
