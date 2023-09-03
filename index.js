@@ -273,44 +273,43 @@ class SwaggerClientBuilder {
         }
     }
 
-    _removeProperties(obj, properties) {
-        const newObj = { ...obj };
-        properties.forEach((property) => {
-            delete newObj[property];
-        });
-
-        return newObj;
-    }
-
     async export(filePath, options) {
         const validation = options?.validation || false;
         const es = options?.es || false;
         const ts = options?.ts || false;
+        const target = options?.target || 'file';
 
         const dependencies = ['axios'];
 
         let addedXml2js = false, addedFormData = false;
-        let str = '';
+
+        let strHead = '';
+        
+        // Suppress typescript errors coming from jsonschema module
+        // Because some properties like "default, example, xml, externalDocs" are not defined in the definition
+        if (ts && validation) strHead += `//@ts-nocheck\n`;
 
         if (es || ts) {
-            str = `import axios${ts ? ', { CreateAxiosDefaults }' : ''} from "axios";\n`;
+            strHead += `import axios${ts ? ', { CreateAxiosDefaults }' : ''} from "axios";\n`;
         } else {
-            str = `const axios = require("axios");\n`;
+            strHead += `const axios = require("axios");\n`;
         }
 
         // Add URLSearchParams
         if (es || ts) {
-            str += `import { URLSearchParams } from "url";\n`;
+            strHead += `import { URLSearchParams } from "url";\n`;
         } else {
-            str += `const { URLSearchParams } = require("url");\n`;
+            strHead += `const { URLSearchParams } = require("url");\n`;
         }
 
+
+        let str = '';
         if (validation) {
             dependencies.push('jsonschema');
             if (es || ts) {
-                str += `import { Validator } from "jsonschema";\n`;
+                strHead += `import { Validator } from "jsonschema";\n`;
             } else {
-                str += `const { Validator } = require("jsonschema");\n`;
+                strHead += `const { Validator } = require("jsonschema");\n`;
             }
         }
 
@@ -325,9 +324,9 @@ class SwaggerClientBuilder {
         str += `\nclass Client {\n`;
         if (ts) {
             str += `    instance: any;\n`;
-            str += `    validator: Validator;\n\n`;
+            if (validation) str += `    validator: Validator;\n`;
         }
-        str += `    constructor(options${ts ? ': CreateAxiosDefaults<any> | {}' : ''}) {\n`;
+        str += `\n    constructor(options${ts ? ': CreateAxiosDefaults<any> | {}' : ''}) {\n`;
         str += `        this.instance = axios.create(options);\n`;
 
         // Add validator and components
@@ -349,7 +348,7 @@ class SwaggerClientBuilder {
                 if (method?.operationId && method?.operationId != "") {
                     // Add jsdoc
                     str += `    /**\n`;
-                    str += `     * ${method.summary}\n`;
+                    str += `     * ${path} ${method?.summary ? '(' + method.summary + ')' : ''}\n`;
                     str += `     * @param {Object} args\n`;
                     str += `     * @param {Object} args.params Path parameters\n`;
                     str += `     * @param {Object} args.query Query parameters\n`;
@@ -357,10 +356,11 @@ class SwaggerClientBuilder {
                     str += `     * @param {Object} args.options Axios request options\n`;
                     str += `     * @returns {Promise<Object>} Response\n`;
                     str += `     */\n`;
-                    str += `    async ${method.operationId}(args${ts ? ': { params: object | {}; query: object | {}; body: any | {}; options:any | {}; }' : ''})${ts ? ': Promise<object>' : ''} {\n`;
+                    str += `    async ${method.operationId}(${ts ? 'args: { params: object | {}; query: object | {}; body: any | {}; options: any | {}}' : '{ params = {}, query = {}, body = {}, options = {} }'})${ts ? ': Promise<object>' : ''} {\n`;
                     str += `        return new Promise(async (resolve, reject) => {\n`;
                     str += `            try {\n`;
-                    str += `                const { params = {}, query = {}, body = {}, options = {} } = args;\n\n`;
+                    if (ts) str += `                				const {params, query, body, options} = args;\n\n`;
+
                     // Add validation
                     if (validation && Object.keys(primeSchema).length > 0) {
                         str += `                const id = "/${method.operationId}";\n\n`;
@@ -433,8 +433,14 @@ class SwaggerClientBuilder {
                                     ...requestBodySchema
                                 }
                                 // Validate body
-                                str += `                const bodyValidation = this.validator.validate(body, ${JSON.stringify(requestBodySchema, null, 2)});\n`;
-                                str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n\n`;
+                                str += `                const bodyValidation = this.validator.validate(body, ${JSON.stringify(requestBodySchema, null, 2)});\n\n`;
+                                if (ts) {
+                                    str += `                bodyValidation.errors?.forEach((error: any) => {\n`;
+                                    str += `                    throw new Error(error);\n`;
+                                    str += `                });\n\n`;
+                                } else {
+                                    str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n\n`;
+                                }
                             }
                         }
 
@@ -446,9 +452,9 @@ class SwaggerClientBuilder {
                             if (!addedFormData) {
                                 dependencies.push('form-data');
                                 if (es || ts) {
-                                    str = `import FormData from "form-data";\n` + str;
+                                    strHead += `import FormData from "form-data";\n`;
                                 } else {
-                                    str = `const FormData = require("form-data");\n` + str;
+                                    strHead += `const FormData = require("form-data");\n`;
                                 }
 
                                 addedFormData = true;
@@ -467,9 +473,9 @@ class SwaggerClientBuilder {
                             if (!addedXml2js) {
                                 dependencies.push('xml2js');
                                 if (es || ts) {
-                                    str = `import xml2js from "xml2js";\n` + str;
+                                    strHead += `import xml2js from "xml2js";\n`;
                                 } else {
-                                    str = `const xml2js = require('xml2js');\n` + str;
+                                    strHead += `const xml2js = require('xml2js');\n`;
                                 }
 
                                 addedXml2js = true;
@@ -506,59 +512,111 @@ class SwaggerClientBuilder {
         str += `}\n\n`;
         str += `module.exports = Client;`;
 
+        // Combine head and body
+        str = strHead + str;
+
         // Beautify code
         const beautifiedCode = beautify(str, { indent_size: 2, space_in_empty_paren: true });
 
-        // Write to file
-        await fs.writeFile(filePath, beautifiedCode);
+        if (target == 'file') await fs.writeFile(filePath, beautifiedCode);
 
-        return dependencies;
+        return {
+            dependencies,
+            code: beautifiedCode
+        };
     }
 }
 
 if (require.main === module) {
     // Run as script
-    try {
-        const path = require('path'), fs = require('fs'),
-            { ArgumentParser } = require('argparse'),
-            { version } = require('./package.json');
+    (async () => {
+        try {
+            const path = require('path'), fs = require('fs'),
+                isValidPath = require('is-valid-path'),
+                validUrl = require('valid-url'),
+                yesno = require('yesno'),
+                { ArgumentParser } = require('argparse'),
+                { version } = require('./package.json');
 
-        const parser = new ArgumentParser({
-            description: chalk.bold.blue('Swagger Client Builder'),
-        });
+            const parser = new ArgumentParser({
+                description: chalk.bold.blue('Swagger Client Builder'),
+            });
 
-        parser.add_argument('-i', '--input', { help: 'Input swagger file path or URL', required: true });
-        parser.add_argument('-o', '--output', { help: 'Output file', required: true });
-        parser.add_argument('-v', '--validation', { help: 'Add validation' });
-        parser.add_argument('-e', '--es', { help: 'Use ES module import instead of CommonJs' });
-        parser.add_argument('-V', '--version', { help: 'Show version', action: 'version', version });
+            const supportedExtensions = ['.js', '.ts'];
+            const swaggerExtensions = ['.json', '.yaml', '.yml'];
 
-        const args = parser.parse_args();
+            parser.add_argument('-i', '--input', { help: `Input swagger file path or URL (${swaggerExtensions.join(' or ')})`, required: true });
+            parser.add_argument('-o', '--output', { help: `Output file path (${supportedExtensions.join(' or ')})`, required: false });
+            parser.add_argument('-v', '--validation', { help: 'Add validation' });
+            parser.add_argument('-e', '--es', { help: 'Use ES module import instead of CommonJs' });
+            parser.add_argument('-T', '--ts', { help: 'Use TypeScript instead of JavaScript' });
+            parser.add_argument('-s', '--silent', { help: 'Silent export (just export without prompts but will show errors)', default: false });
+            parser.add_argument('-t', '--target', { help: 'Target output ("file" or "bash")', default: 'file' });
+            parser.add_argument('-V', '--version', { help: 'Show version', action: 'version', version });
 
-        const output = path.resolve(args.output);
-        // get extension of output file
-        const ext = path.extname(output);
+            const args = parser.parse_args();
 
-        const validation = args.validation || false;
-        const es = args.es || false;
-        const ts = ext == '.ts' || false;
+            let output;
+            const ts = args.ts || false;
+            let ext;
 
-        (async () => {
+
+            // Check if input is a valid path or url
+            if (!isValidPath(args.input) && !validUrl.isUri(args.input)) throw new Error("Input must be a valid path or url");
+
+            // Check if input file is a swagger file
+            if (!swaggerExtensions.includes(path.extname(args.input))) throw new Error(`Input file extension must be ${swaggerExtensions.join(' or ')} ')}`);
+
+            if (args.target == 'file') {
+                if (!args.output) throw new Error("Output file is required if target is file");
+
+                output = path.resolve(args.output);
+
+                // get extension of output file
+                ext = path.extname(output);
+
+                // Check if output file is a javascript or typescript file
+                if (!supportedExtensions.includes(ext)) throw new Error(`Output file extension must be ${supportedExtensions.join(' or ')} ')}`);
+
+                // Check if output file is a valid path
+                if (!isValidPath(args.output)) throw new Error("Output must be a valid path");
+
+                // Check if output file already exists
+                if (fs.existsSync(output) && !args.silent) {
+                    const ok = await yesno({
+                        question: chalk.bold(`File ${output} already exists. Do you want to overwrite it? (y/n)`),
+                        defaultValue: false,
+                    })
+
+                    if (!ok) process.exit(0);
+                }
+            }
+
+
+            const validation = args.validation || false;
+            const es = args.es || false;
+
             const Client = new SwaggerClientBuilder(args.input);
 
             await Client.build();
 
-            const dependencies = await Client.export(output, { validation, es, ts });
+            const { dependencies, code } = await Client.export(output, { validation, es, ts, target: args.target });
 
-            console.log(chalk.bold.green(`Swagger client exported to ${output}\n`));
+            if (args.target == 'bash') {
+                console.log(code);
+            } else {
+                if (!args.silent) {
+                    console.log(chalk.bold.green(`Swagger client exported to ${output}\n`));
 
-            console.log(chalk.bold.bgBlue(`Remember to install dependencies:\n`))
+                    console.log(chalk.bold.bgBlue(`Remember to install dependencies:\n`))
 
-            console.log(`npm install ${dependencies.join(' ')}\n\nOr:\n\nyarn add ${dependencies.join(' ')}\n`);
-        })();
-    } catch (error) {
-        console.error(chalk.bold.red(error.message));
-    }
+                    console.log(`npm install ${dependencies.join(' ')}\n\nOr:\n\nyarn add ${dependencies.join(' ')}\n`);
+                }
+            }
+        } catch (error) {
+            console.error(chalk.bold.red(error.message));
+        }
+    })();
 }
 
 module.exports = SwaggerClientBuilder;
