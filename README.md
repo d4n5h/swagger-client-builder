@@ -6,13 +6,13 @@ Basically using the Swagger document to generate a client in reverse.
 
 ## Features
 
-* Create methods from operationIds.
+* Uses operationIds for function names.
 
 * Optionally it can use the Swagger schema for input validation.
 
 * Automatically converts the body to the correct content-type, but you can manually override it by defining the content-type in the axios request options.
 
-* If the protocol, host and base path are defined then it will use it as baseURL, but you can manually override it by defining the content-type in the axios request options.
+* If the protocol, host and base path are defined then it will use them as baseURL, but you can manually override it by defining the baseURL in the axios config.
 
 * Supports Swagger v2 and OpenAPI v3.
 
