@@ -47,34 +47,45 @@ npm i swagger-client-builder -g
 #### Usage
 
 ```bash
-usage: swagger-client-builder [-h] -i INPUT -o OUTPUT [-v VALIDATION] [-e ES] [-V]
+usage: swagger-client-builder [-h] -i INPUT [-o OUTPUT] [-v VALIDATION] [-e ES] [-T TS] [-s SILENT] [-t TARGET] [-V]
 
 Swagger Client Builder
 
 optional arguments:
   -h, --help            show this help message and exit
   -i INPUT, --input INPUT
-                        Input swagger file path or URL
+                        Input swagger file path or URL (.json or .yaml or .yml)
   -o OUTPUT, --output OUTPUT
-                        Output file
+                        Output file path (.js or .ts)
   -v VALIDATION, --validation VALIDATION
                         Add validation
   -e ES, --es ES        Use ES module import instead of CommonJs
+  -T TS, --ts TS        Use TypeScript instead of JavaScript
+  -s SILENT, --silent SILENT
+                        Silent export (just export without prompts but will show errors)
+  -t TARGET, --target TARGET
+                        Target output ("file" or "bash")
   -V, --version         Show version
 ```
 
-#### Example
+#### CLI Examples
 
-##### JavaScript
+##### Export to JavaScript with ES imports
 
 ```bash
-swagger-client-builder -i https://petstore3.swagger.io/api/v3/openapi.json -o ./path/to/output.js -v true
+swagger-client-builder --input https://petstore3.swagger.io/api/v3/openapi.json --output ./path/to/output.js --validation true --es true
 ```
 
-##### TypeScript
+##### Export to JavaScript with CommonJs requires
 
 ```bash
-swagger-client-builder -i https://petstore3.swagger.io/api/v3/openapi.json -o ./path/to/output.ts -v true
+swagger-client-builder --input https://petstore3.swagger.io/api/v3/openapi.json --output ./path/to/output.js --validation true
+```
+
+##### Export to TypeScript
+
+```bash
+swagger-client-builder --input https://petstore3.swagger.io/api/v3/openapi.json --output ./path/to/output.ts --validation true --ts true
 ```
 
 ## Code Example
