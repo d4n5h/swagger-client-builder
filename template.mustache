@@ -1,0 +1,168 @@
+{{#ts}}
+//@ts-nocheck
+{{#dependencies}}
+import {{{name}}} from "{{{path}}}";
+{{/dependencies}}
+{{/ts}}
+{{^ts}}
+{{#es}}
+{{#dependencies}}
+import {{{name}}} from "{{{path}}}";
+{{/dependencies}}
+{{/es}}
+{{^es}}
+{{#dependencies}}
+const {{{name}}} = require("{{{path}}}");
+{{/dependencies}}
+{{/es}}
+{{/ts}}
+
+{{#ts}}
+const convertUrl = (path: string, params: object | {}, query: any | {}) => {
+{{/ts}}
+{{^ts}}
+const convertUrl = (path, params, query) => {
+{{/ts}}
+    const queryString = new URLSearchParams(query).toString();
+    const urlPath = path.replace(/{(.*?)}/g, (m, c) => params[c]);
+    const url = `${urlPath}${queryString ? `?${queryString}` : ""}`;
+    return url;
+};
+
+class Client {
+    {{#ts}}
+    instance: any;
+    {{#validation}}
+    validator: Validator;
+    {{/validation}}
+    {{/ts}}
+
+    {{#ts}}
+        constructor(options: CreateAxiosDefaults<any> | undefined) {
+    {{/ts}}
+    {{^ts}}
+        constructor(options) {
+    {{/ts}}
+        this.instance = axios.create(options);
+        {{#validation}}
+        this.validator = new Validator();
+        {{/validation}}
+    }
+
+    {{#paths}}
+    {{! Methods }}
+    /**
+      * {{{description}}}
+      * @param {Object} args
+      * @param {Object} args.params Path parameters
+      * @param {Object} args.query Query parameters
+      * @param {Object} args.body Request body
+      * @param {Object} args.options Axios request options
+      * @returns {Promise<Object>} Response
+    */
+    {{#ts}}
+    async {{operationId}}(args: {
+        params: object | {}; query: object | {}; body: any | {}; options: any | {}
+    }): Promise < object > {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const { params, query, body, options } = args;
+    {{/ts}}
+    {{^ts}}
+    async {{operationId}}({
+        params = {},
+        query = {},
+        body = {},
+        options = {}
+    }) {
+        return new Promise(async (resolve, reject) => {
+            try {
+    {{/ts}}
+                {{#renderId}}const id = "{{{id}}}";{{/renderId}}
+            {{#validation}}
+                {{#paramsSchema}}
+                const paramsValidation = this.validator.validate(params, {
+                    id,
+                    ...{{{paramsSchema}}}
+                });
+
+                if (paramsValidation?.errors?.length > 0) throw new Error(paramsValidation.errors);
+                {{/paramsSchema}}
+                {{#querySchema}}
+                const queryValidation = this.validator.validate(query, {
+                    id,
+                    ...{{{querySchema}}}
+                });
+
+                if (queryValidation?.errors?.length > 0) throw new Error(queryValidation.errors);
+                {{/querySchema}}
+                {{#bodySchema}}
+                const bodyValidation = this.validator.validate(body, {
+                    id,
+                    ...{{{bodySchema}}}
+                });
+
+                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);
+                {{/bodySchema}}
+
+                {{#requestBodySchema}}
+                const requestBodyValidation = this.validator.validate(body, {
+                    id,
+                    ...{{{requestBodySchema}}}
+                });
+
+                if (requestBodyValidation?.errors?.length > 0) throw new Error(requestBodyValidation.errors);
+                {{/requestBodySchema}}
+            {{/validation}}
+
+            {{#isPost}}
+                {{#isXML}}
+                const builder = new xml2js.Builder();
+                body = builder.buildObject(body);
+                {{/isXML}}
+                {{#isFormData}}
+                const formData = new FormData();
+                for (const key in body) formData.append(key, body[key]);
+                body = formData;
+                {{/isFormData}}
+                {{#isUrlEncoded}}
+                body = new URLSearchParams(body).toString();
+                {{/isUrlEncoded}}
+            {{/isPost}}
+                if (!options?.headers) options.headers = {};
+                options.headers["content-type"] = "{{{contentType}}}";
+
+                const url = convertUrl("{{{path}}}", params, query);
+
+                const response = await this.instance({
+                    method: "{{method}}",
+                    url,
+                    params,
+                    data: body,
+                    ...options,
+                });
+
+                resolve(response);
+
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+    {{/paths}}
+}
+{{! Export }}
+{{#ts}}
+{{! TypeScript }}
+export default Client;
+{{/ts}}
+{{^ts}}
+{{#es}}
+{{! ES }}
+export default Client;
+{{/es}}
+{{^es}}
+{{! CommonJS }}
+module.exports = Client;
+{{/es}}
+{{/ts}}

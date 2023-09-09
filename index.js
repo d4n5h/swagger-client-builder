@@ -8,6 +8,8 @@ const beautify = require('js-beautify/js').js,
     fs = require('fs').promises,
     SwaggerParser = require('swagger-parser'),
     { URLSearchParams } = require('url'),
+    Mustache = require('mustache'),
+    Path = require('path'),
     chalk = require('chalk');
 
 // Custom error types
@@ -273,250 +275,80 @@ class SwaggerClientBuilder {
         }
     }
 
-    async export(filePath, options) {
-        const validation = options?.validation || false;
-        const es = options?.es || false;
-        const ts = options?.ts || false;
-        const target = options?.target || 'file';
-
-        const dependencies = ['axios'];
-
-        let addedXml2js = false, addedFormData = false;
-
-        let strHead = '';
-        
-        // Suppress typescript errors coming from jsonschema module
-        // Because some properties like "default, example, xml, externalDocs" are not defined in the definition
-        if (ts && validation) strHead += `//@ts-nocheck\n`;
-
-        if (es || ts) {
-            strHead += `import axios${ts ? ', { CreateAxiosDefaults }' : ''} from "axios";\n`;
-        } else {
-            strHead += `const axios = require("axios");\n`;
-        }
-
-        // Add URLSearchParams
-        if (es || ts) {
-            strHead += `import { URLSearchParams } from "url";\n`;
-        } else {
-            strHead += `const { URLSearchParams } = require("url");\n`;
-        }
-
-
-        let str = '';
-        if (validation) {
-            dependencies.push('jsonschema');
-            if (es || ts) {
-                strHead += `import { Validator } from "jsonschema";\n`;
-            } else {
-                strHead += `const { Validator } = require("jsonschema");\n`;
-            }
-        }
-
-        // Add convert url function
-        str += `\nconst convertUrl = (${ts ? 'path:string, params:object | {}, query:any | {}' : 'path, params, query'}) => {\n`;
-        str += `    const queryString = new URLSearchParams(query).toString();\n`;
-        str += `    const urlPath = path.replace(/{(.*?)}/g, (m, c) => params[c]);\n`;
-        str += `    const url = \`\${urlPath}\${queryString ? \`?\${queryString}\` : ""}\`;\n`;
-        str += `    return url;\n`;
-        str += `};\n`;
-
-        str += `\nclass Client {\n`;
-        if (ts) {
-            str += `    instance: any;\n`;
-            if (validation) str += `    validator: Validator;\n`;
-        }
-        str += `\n    constructor(options${ts ? ': CreateAxiosDefaults<any> | {}' : ''}) {\n`;
-        str += `        this.instance = axios.create(options);\n`;
-
-        // Add validator and components
-        if (validation) str += `        this.validator = new Validator();\n`;
-
-        str += `    }\n\n`;
-
-        // Add methods/paths to class
+    async prepareForMustache() {
+        const paths = [];
+        const dependencies = {};
         for (const path in this.paths) {
             const methods = this.paths[path];
             for (const methodKey in methods) {
                 const method = methods[methodKey];
                 const { parameters } = method;
 
-                let primeSchema = {};
-                if (parameters && validation) primeSchema = this._prepareParameters(parameters);
+                let schema = {};
+                if (parameters) schema = this._prepareParameters(parameters);
 
                 // Replace path parameters
-                if (method?.operationId && method?.operationId != "") {
-                    // Add jsdoc
-                    str += `    /**\n`;
-                    str += `     * ${path} ${method?.summary ? '(' + method.summary + ')' : ''}\n`;
-                    str += `     * @param {Object} args\n`;
-                    str += `     * @param {Object} args.params Path parameters\n`;
-                    str += `     * @param {Object} args.query Query parameters\n`;
-                    str += `     * @param {Object} args.body Request body\n`;
-                    str += `     * @param {Object} args.options Axios request options\n`;
-                    str += `     * @returns {Promise<Object>} Response\n`;
-                    str += `     */\n`;
-                    str += `    async ${method.operationId}(${ts ? 'args: { params: object | {}; query: object | {}; body: any | {}; options: any | {}}' : '{ params = {}, query = {}, body = {}, options = {} }'})${ts ? ': Promise<object>' : ''} {\n`;
-                    str += `        return new Promise(async (resolve, reject) => {\n`;
-                    str += `            try {\n`;
-                    if (ts) str += `                				const {params, query, body, options} = args;\n\n`;
 
-                    // Add validation
-                    if (validation && Object.keys(primeSchema).length > 0) {
-                        str += `                const id = "/${method.operationId}";\n\n`;
-                        // Validate query
-                        if (primeSchema.query) {
-                            str += `                const queryValidation = this.validator.validate(query, {\n`;
-                            str += `                    id,\n`;
-                            str += `                    ...${JSON.stringify(primeSchema.query, null, 2)}\n`;
-                            str += `                });\n\n`;
-                            if (ts) {
-                                str += `                queryValidation.errors?.forEach((error: any) => {\n`;
-                                str += `                    throw new Error(error);\n`;
-                                str += `                });\n\n`;
-                            } else {
-                                str += `                if (queryValidation?.errors?.length > 0) throw new Error(queryValidation.errors);\n\n`;
-                            }
-                        }
-                        // Validate params
-                        if (primeSchema.path) {
-                            str += `                const paramsValidation = this.validator.validate(params, {\n`;
-                            str += `                    id,\n`;
-                            str += `                    ...${JSON.stringify(primeSchema.path, null, 2)}\n`;
-                            str += `                });\n\n`;
-                            if (ts) {
-                                str += `                paramsValidation.errors?.forEach((error: any) => {\n`;
-                                str += `                    throw new Error(error);\n`;
-                                str += `                });\n\n`;
-                            } else {
-                                str += `                if (paramsValidation?.errors?.length > 0) throw new Error(paramsValidation.errors);\n\n`;
-                            }
-                        }
-                        // Validate body
-                        if (primeSchema.body) {
-                            str += `                const bodyValidation = this.validator.validate(body, {\n`;
-                            str += `                    id,\n`;
-                            str += `                    ...${JSON.stringify(primeSchema.body, null, 2)}\n`;
-                            str += `                });\n\n`;
-                            if (ts) {
-                                str += `                bodyValidation.errors?.forEach((error: any) => {\n`;
-                                str += `                    throw new Error(error);\n`;
-                                str += `                });\n\n`;
-                            } else {
-                                str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n\n`;
-                            }
-                        }
-                    }
+                const contentType = Object.keys(method?.requestBody?.content || {})[0] || "application/json";
 
-                    let contentType;
-
-                    // Validate requestBody component schema
-                    if (["post", "put", "patch"].includes(methodKey)) {
-                        // requestBody content types
-                        const requestContentTypes = method?.requestBody?.content || {};
-                        const contentTypeKeys = Object.keys(requestContentTypes);
-
-                        // Set content-type to first content type if content type didn't match
-                        if (contentTypeKeys[0]) {
-                            contentType = contentTypeKeys[0];
-                        } else {
-                            contentType = "application/json";
-                        }
-
-                        if (validation) {
-                            // Validate requestBody component schema
-                            let requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
-
-                            if (requestBodySchema) {
-                                requestBodySchema = {
-                                    id: `/${method.operationId}/requestBody`,
-                                    ...requestBodySchema
-                                }
-                                // Validate body
-                                str += `                const bodyValidation = this.validator.validate(body, ${JSON.stringify(requestBodySchema, null, 2)});\n\n`;
-                                if (ts) {
-                                    str += `                bodyValidation.errors?.forEach((error: any) => {\n`;
-                                    str += `                    throw new Error(error);\n`;
-                                    str += `                });\n\n`;
-                                } else {
-                                    str += `                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);\n\n`;
-                                }
-                            }
-                        }
-
-                        // Convert body to content-type
-                        if (contentType == "multipart/form-data") {
-                            // Convert body to form data
-
-                            // add form-data dependency
-                            if (!addedFormData) {
-                                dependencies.push('form-data');
-                                if (es || ts) {
-                                    strHead += `import FormData from "form-data";\n`;
-                                } else {
-                                    strHead += `const FormData = require("form-data");\n`;
-                                }
-
-                                addedFormData = true;
-                            }
-
-                            str += `                const formData = new FormData();\n`;
-                            str += `                for (const key in body) formData.append(key, body[key]);\n`;
-                            str += `                body = formData;\n`;
-                        } else if (contentType == "application/x-www-form-urlencoded") {
-                            // Convert body to url encoded
-                            str += `                body = new URLSearchParams(body).toString();\n`;
-
-                        } else if (contentType == "application/xml") {
-
-                            // add xml2js dependency
-                            if (!addedXml2js) {
-                                dependencies.push('xml2js');
-                                if (es || ts) {
-                                    strHead += `import xml2js from "xml2js";\n`;
-                                } else {
-                                    strHead += `const xml2js = require('xml2js');\n`;
-                                }
-
-                                addedXml2js = true;
-                            }
-
-                            // Convert body to xml
-                            str += `                const builder = new xml2js.Builder();\n`;
-                            str += `                body = builder.buildObject(body);\n\n`;
-                        }
-                        // Add content-type header
-                        str += `                if (!options?.headers) options.headers = {};\n`;
-                        str += `                options.headers["content-type"] = "${contentType}";\n\n`;
-                    }
-
-                    // Convert params object to query string
-                    str += `                const url = convertUrl("${path}", params, query);\n\n`;
-                    str += `                const response = await this.instance({\n`;
-                    str += `                    method: "${methodKey}",\n`;
-                    str += `                    url,\n`;
-                    str += `                    params,\n`;
-                    str += `                    data: body,\n`;
-                    str += `                    ...options,\n`;
-                    str += `                });\n\n`;
-                    str += `                resolve(response);\n`;
-                    str += `            } catch (error) {\n`;
-                    str += `                reject(error);\n`;
-                    str += `            }\n`;
-                    str += `        });\n`;
-                    str += `    }\n`;
+                if (contentType == 'multipart/form-data') {
+                    dependencies['FormData'] = ['form-data'];
+                } else if (contentType == 'application/xml') {
+                    dependencies['xml2js'] = ['xml2js'];
                 }
+                paths.push({
+                    id: `${path}/${methodKey}`,
+                    path,
+                    method: methodKey,
+                    description: `${methodKey.toUpperCase()} ${path}${method?.summary ? ' (' + method.summary + ')' : ''}`,
+                    operationId: method?.operationId || null,
+                    contentType,
+                    isPost: ['post', 'put', 'patch'].includes(methodKey),
+                    isXML: contentType == 'application/xml',
+                    isFormData: contentType == 'multipart/form-data',
+                    isUrlEncoded: contentType == 'application/x-www-form-urlencoded',
+                    paramsSchema: schema?.params ? JSON.stringify(schema.params, null, 4) : null,
+                    querySchema: schema?.query ? JSON.stringify(schema.query, null, 4) : null,
+                    bodySchema: schema?.body ? JSON.stringify(schema.body, null, 4) : null,
+                    requestBodySchema: method?.requestBody?.content?.[contentType]?.schema ? JSON.stringify(method.requestBody.content[contentType].schema, null, 4) : null,
+                    renderId: schema?.params || schema?.query || schema?.body || method?.requestBody?.content?.[contentType]?.schema ? true : false,
+                });
             }
         }
 
-        str += `}\n\n`;
-        str += `module.exports = Client;`;
+        return {
+            paths,
+            dependencies
+        };
+    }
 
-        // Combine head and body
-        str = strHead + str;
+    async export(filePath, options) {
+        const validation = options?.validation || false,
+            es = options?.es || false,
+            ts = options?.ts || false,
+            target = options?.target || 'file';
 
-        // Beautify code
-        const beautifiedCode = beautify(str, { indent_size: 2, space_in_empty_paren: true });
+        const dependencies = [
+            { name: 'axios', path: 'axios' },
+            { name: '{ URLSearchParams }', path: 'url' },
+        ];
+
+        const prepared = await this.prepareForMustache();
+
+        // Add dependencies
+        for (const dependency in prepared.dependencies) {
+            dependencies.push({ name: dependency, path: prepared.dependencies[dependency] });
+        }
+
+        const code = Mustache.render((await fs.readFile(Path.join(__dirname, 'template.mustache'), 'utf8')).toString(), {
+            ts,
+            es,
+            validation,
+            dependencies,
+            paths: prepared.paths,
+        })
+
+        const beautifiedCode = beautify(code, { indent_size: 4, space_in_empty_paren: true });
 
         if (target == 'file') await fs.writeFile(filePath, beautifiedCode);
 
@@ -556,10 +388,8 @@ if (require.main === module) {
 
             const args = parser.parse_args();
 
-            let output;
+            let output, ext;
             const ts = args.ts || false;
-            let ext;
-
 
             // Check if input is a valid path or url
             if (!isValidPath(args.input) && !validUrl.isUri(args.input)) throw new Error("Input must be a valid path or url");
@@ -593,25 +423,19 @@ if (require.main === module) {
             }
 
 
-            const validation = args.validation || false;
-            const es = args.es || false;
+            const validation = args.validation || false,
+                es = args.es || false;
 
             const Client = new SwaggerClientBuilder(args.input);
 
             await Client.build();
 
-            const { dependencies, code } = await Client.export(output, { validation, es, ts, target: args.target });
+            const { code } = await Client.export(output, { validation, es, ts, target: args.target });
 
             if (args.target == 'bash') {
                 console.log(code);
             } else {
-                if (!args.silent) {
-                    console.log(chalk.bold.green(`Swagger client exported to ${output}\n`));
-
-                    console.log(chalk.bold.bgBlue(`Remember to install dependencies:\n`))
-
-                    console.log(`npm install ${dependencies.join(' ')}\n\nOr:\n\nyarn add ${dependencies.join(' ')}\n`);
-                }
+                if (!args.silent) console.log(chalk.bold.green(`Swagger client exported to ${output}\n`));
             }
         } catch (error) {
             console.error(chalk.bold.red(error.message));
