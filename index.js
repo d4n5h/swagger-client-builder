@@ -322,6 +322,17 @@ class SwaggerClientBuilder {
         };
     }
 
+
+    /**
+     * Export client to a file
+     * @param {any} filePath Export file path
+     * @param {any} options Export options
+     * @param {any} options.validation Add validation
+     * @param {any} options.es Use ES module import instead of CommonJs
+     * @param {any} options.ts Use TypeScript instead of JavaScript
+     * @param {any} options.target Target output ("file" or "bash")
+     * @returns {any}
+     */
     async export(filePath, options) {
         const validation = options?.validation || false,
             es = options?.es || false,
