@@ -1,16 +1,21 @@
 #!/usr/bin/env node
 
-const beautify = require('js-beautify/js').js,
+const { URLSearchParams } = require('url'),
     { Validator } = require("jsonschema"),
+    { version } = require('./package.json'),
     axios = require("axios"),
+    beautify = require('js-beautify/js').js,
+    chalk = require('chalk'),
     FormData = require("form-data"),
-    xml2js = require('xml2js'),
+    Fs = require('fs'),
     fs = require('fs').promises,
-    SwaggerParser = require('swagger-parser'),
-    { URLSearchParams } = require('url'),
+    isValidPath = require('is-valid-path'),
     Mustache = require('mustache'),
     Path = require('path'),
-    chalk = require('chalk');
+    SwaggerParser = require('swagger-parser'),
+    validUrl = require('valid-url'),
+    xml2js = require('xml2js'),
+    yesno = require('yesno');
 
 // Custom error types
 class QueryValidationError extends Error {
@@ -374,79 +379,109 @@ if (require.main === module) {
     // Run as script
     (async () => {
         try {
-            const path = require('path'), fs = require('fs'),
-                isValidPath = require('is-valid-path'),
-                validUrl = require('valid-url'),
-                yesno = require('yesno'),
-                { ArgumentParser } = require('argparse'),
-                { version } = require('./package.json');
-
-            const parser = new ArgumentParser({
-                description: chalk.bold.blue('Swagger Client Builder'),
+            const argv = require('minimist')(process.argv.slice(2), {
+                string: ["input", "output", "target"],
+                boolean: ["ts", "es", "validation", "silent", "help", "version"],
+                alias: {
+                    input: "i",
+                    verbose: "v",
+                    output: "o",
+                    validation: "v",
+                    es: "e",
+                    ts: "t",
+                    silent: "s",
+                    target: "T",
+                    help: "h",
+                    version: "V",
+                },
             });
 
             const supportedExtensions = ['.js', '.ts'];
             const swaggerExtensions = ['.json', '.yaml', '.yml'];
 
-            parser.add_argument('-i', '--input', { help: `Input swagger file path or URL (${swaggerExtensions.join(' or ')})`, required: true });
-            parser.add_argument('-o', '--output', { help: `Output file path (${supportedExtensions.join(' or ')})`, required: false });
-            parser.add_argument('-v', '--validation', { help: 'Add validation' });
-            parser.add_argument('-e', '--es', { help: 'Use ES module import instead of CommonJs' });
-            parser.add_argument('-T', '--ts', { help: 'Use TypeScript instead of JavaScript' });
-            parser.add_argument('-s', '--silent', { help: 'Silent export (just export without prompts but will show errors)', default: false });
-            parser.add_argument('-t', '--target', { help: 'Target output ("file" or "bash")', default: 'file' });
-            parser.add_argument('-V', '--version', { help: 'Show version', action: 'version', version });
-
-            const args = parser.parse_args();
-
-            let output, ext;
-            const ts = args.ts || false;
-
-            // Check if input is a valid path or url
-            if (!isValidPath(args.input) && !validUrl.isUri(args.input)) throw new Error("Input must be a valid path or url");
-
-            // Check if input file is a swagger file
-            if (!swaggerExtensions.includes(path.extname(args.input))) throw new Error(`Input file extension must be ${swaggerExtensions.join(' or ')} ')}`);
-
-            if (args.target == 'file') {
-                if (!args.output) throw new Error("Output file is required if target is file");
-
-                output = path.resolve(args.output);
-
-                // get extension of output file
-                ext = path.extname(output);
-
-                // Check if output file is a javascript or typescript file
-                if (!supportedExtensions.includes(ext)) throw new Error(`Output file extension must be ${supportedExtensions.join(' or ')} ')}`);
-
-                // Check if output file is a valid path
-                if (!isValidPath(args.output)) throw new Error("Output must be a valid path");
-
-                // Check if output file already exists
-                if (fs.existsSync(output) && !args.silent) {
-                    const ok = await yesno({
-                        question: chalk.bold(`File ${output} already exists. Do you want to overwrite it? (y/n)`),
-                        defaultValue: false,
-                    })
-
-                    if (!ok) process.exit(0);
-                }
-            }
-
-
-            const validation = args.validation || false,
-                es = args.es || false;
-
-            const Client = new SwaggerClientBuilder(args.input);
-
-            await Client.build();
-
-            const { code } = await Client.export(output, { validation, es, ts, target: args.target });
-
-            if (args.target == 'bash') {
-                console.log(code);
+            if (argv.h || argv.help) {
+                const message = [
+                    chalk.blue.bold(`Swagger Client Builder - v${version}\n`),
+                    "Usage: swagger-client-builder -i <input> -o <output> [options]",
+                    "Options:\n",
+                    `  -i, --input\t\tInput swagger file path or URL (${swaggerExtensions.join(' or ')})`,
+                    `  -o, --output\t\tOutput file path (${supportedExtensions.join(' or ')})`,
+                    "  -v, --validation\tUse jsonschema validation",
+                    "  -e, --es\t\tUse ES module import instead of CommonJs",
+                    "  -t, --ts\t\tUse TypeScript instead of JavaScript",
+                    "  -s, --silent\t\tSilent export (just export without prompts but will show errors)",
+                    "  -T, --target\t\tTarget output (\"file\" or \"bash\")",
+                    "  -V, --version\t\tShow version",
+                ]
+                console.log(message.join("\n"));
+                process.exit(0);
+            } else if (argv.V || argv.version) {
+                console.log(version);
+                process.exit(0);
             } else {
-                if (!args.silent) console.log(chalk.bold.green(`Swagger client exported to ${output}\n`));
+                const args = {
+                    input: argv.i || argv.input,
+                    output: argv.o || argv.output,
+                    validation: argv.v || argv.validation || false,
+                    es: argv.e || argv.es || false,
+                    ts: argv.t || argv.ts || false,
+                    silent: argv.s || argv.silent || false,
+                    target: argv.T || argv.target || 'file',
+                    version: argv.V || argv.version || false,
+                };
+
+                let output, ext;
+                const ts = args.ts || false;
+
+                // Check if input is a valid path or url
+                if (!isValidPath(args.input) && !validUrl.isUri(args.input)) throw new Error("Input must be a valid path or url");
+
+                // Check if input file is a swagger file
+                if (!swaggerExtensions.includes(Path.extname(args.input))) throw new Error(`Input file extension must be ${swaggerExtensions.join(' or ')} ')}`);
+
+                if (args.target == 'file') {
+                    if (!args.output) throw new Error("Output file is required if target is file");
+
+                    output = Path.resolve(args.output);
+
+                    // get extension of output file
+                    ext = Path.extname(output);
+
+                    // Check if output file is a javascript or typescript file
+                    if (!supportedExtensions.includes(ext)) throw new Error(`Output file extension must be ${supportedExtensions.join(' or ')} ')}`);
+
+                    // Check if extension is correct
+                    if (ts && ext != '.ts') throw new Error("Output file extension must be .ts if ts option is enabled");
+                    if (!ts && ext != '.js') throw new Error("Output file extension must be .js if ts option is disabled");
+
+                    // Check if output file is a valid path
+                    if (!isValidPath(args.output)) throw new Error("Output must be a valid path");
+
+                    // Check if output file already exists
+                    if (Fs.existsSync(output) && !args.silent) {
+                        const ok = await yesno({
+                            question: chalk.bold(`File "${output}" already exists. Do you want to overwrite it? (y/n)`),
+                            defaultValue: false,
+                        })
+
+                        if (!ok) process.exit(0);
+                    }
+                }
+
+
+                const validation = args.validation || false, es = args.es || false;
+
+                const Client = new SwaggerClientBuilder(args.input);
+
+                await Client.build();
+
+                const { code } = await Client.export(output, { validation, es, ts, target: args.target });
+
+                if (args.target == 'bash') {
+                    console.log(code);
+                } else {
+                    if (!args.silent) console.log(chalk.bold.green(`Swagger client exported to ${output}\n`));
+                }
             }
         } catch (error) {
             console.error(chalk.bold.red(error.message));

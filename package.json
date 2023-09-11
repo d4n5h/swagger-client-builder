@@ -1,6 +1,6 @@
 {
   "name": "swagger-client-builder",
-  "version": "1.1.31",
+  "version": "1.1.32",
   "description": "Automatically generates an API client on top of Axios using Swagger document and uses its schema for input validation",
   "keywords": [
     "swagger",
@@ -54,13 +54,13 @@
   "author": "Daniel Shlomo",
   "license": "MIT",
   "dependencies": {
-    "argparse": "^2.0.1",
     "axios": "^1.4.0",
     "chalk": "4.1.2",
     "form-data": "^4.0.0",
     "is-valid-path": "^0.1.1",
     "js-beautify": "^1.14.9",
     "jsonschema": "^1.4.1",
+    "minimist": "^1.2.8",
     "mustache": "^4.2.0",
     "swagger-parser": "^10.0.3",
     "valid-url": "^1.0.9",
