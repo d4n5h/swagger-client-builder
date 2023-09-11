@@ -47,24 +47,16 @@ npm i swagger-client-builder -g
 #### Usage
 
 ```bash
-usage: swagger-client-builder [-h] -i INPUT [-o OUTPUT] [-v VALIDATION] [-e ES] [-T TS] [-s SILENT] [-t TARGET] [-V]
+Usage: swagger-client-builder -i <input> -o <output> [options]
+Options:
 
-Swagger Client Builder
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -i INPUT, --input INPUT
-                        Input swagger file path or URL (.json or .yaml or .yml)
-  -o OUTPUT, --output OUTPUT
-                        Output file path (.js or .ts)
-  -v VALIDATION, --validation VALIDATION
-                        Add validation
-  -e ES, --es ES        Use ES module import instead of CommonJs
-  -T TS, --ts TS        Use TypeScript instead of JavaScript
-  -s SILENT, --silent SILENT
-                        Silent export (just export without prompts but will show errors)
-  -t TARGET, --target TARGET
-                        Target output ("file" or "bash")
+  -i, --input           Input swagger file path or URL (.json or .yaml or .yml)
+  -o, --output          Output file path (.js or .ts)
+  -v, --validation      Use jsonschema validation
+  -e, --es              Use ES module import instead of CommonJs
+  -t, --ts              Use TypeScript instead of JavaScript
+  -s, --silent          Silent export (just export without prompts but will show errors)
+  -T, --target          Target output ("file" or "bash")
   -V, --version         Show version
 ```
 
@@ -73,19 +65,19 @@ optional arguments:
 ##### Export to JavaScript with ES imports
 
 ```bash
-swagger-client-builder --input https://petstore3.swagger.io/api/v3/openapi.json --output ./path/to/output.js --validation true --es true
+swagger-client-builder -i https://petstore3.swagger.io/api/v3/openapi.json -o ./path/to/output.js -v -e
 ```
 
 ##### Export to JavaScript with CommonJs requires
 
 ```bash
-swagger-client-builder --input https://petstore3.swagger.io/api/v3/openapi.json --output ./path/to/output.js --validation true
+swagger-client-builder -i https://petstore3.swagger.io/api/v3/openapi.json -o ./path/to/output.js -v
 ```
 
 ##### Export to TypeScript
 
 ```bash
-swagger-client-builder --input https://petstore3.swagger.io/api/v3/openapi.json --output ./path/to/output.ts --validation true --ts true
+swagger-client-builder -i https://petstore3.swagger.io/api/v3/openapi.json -o ./path/to/output.ts -v -t
 ```
 
 ## Code Example
