@@ -46,7 +46,7 @@ npm i swagger-client-builder -g
 
 #### Usage
 
-```bash
+```
 Usage: swagger-client-builder -i <input> -o <output> [options]
 Options:
 
