@@ -349,12 +349,16 @@ class SwaggerClientBuilder {
             { name: '{ URLSearchParams }', path: 'url' },
         ];
 
+        if (validation) dependencies.push({ name: '{ Validator }', path: 'jsonschema' });
+
+
         const prepared = await this.prepareForMustache();
 
         // Add dependencies
         for (const dependency in prepared.dependencies) {
             dependencies.push({ name: dependency, path: prepared.dependencies[dependency] });
         }
+        
 
         const code = Mustache.render((await fs.readFile(Path.join(__dirname, 'template.mustache'), 'utf8')).toString(), {
             ts,

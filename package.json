@@ -50,6 +50,9 @@
   "bin": {
     "swagger-client-builder": "./index.js"
   },
+  "scripts": {
+    "test": "jest"
+  },
   "repository": "https://github.com/d4n5h/swagger-client-builder.git",
   "author": "Daniel Shlomo",
   "license": "MIT",
@@ -66,5 +69,8 @@
     "valid-url": "^1.0.9",
     "xml2js": "^0.6.2",
     "yesno": "^0.4.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
   }
 }

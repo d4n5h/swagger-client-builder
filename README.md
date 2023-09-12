@@ -18,7 +18,7 @@ Basically using the Swagger document to generate a client in reverse.
 
 * Can be installed as a global package and export a standalone API client via the CLI.
 
-* CLI can export both JavaScript and TypeScript (extension detected from output path)
+* CLI can export both JavaScript and TypeScript.
 
 ## Caveats
 
