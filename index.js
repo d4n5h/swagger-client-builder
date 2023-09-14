@@ -3,6 +3,7 @@
 const { URLSearchParams } = require('url'),
     { Validator } = require("jsonschema"),
     { version } = require('./package.json'),
+    Ajv = require("ajv"),
     axios = require("axios"),
     beautify = require('js-beautify/js').js,
     chalk = require('chalk'),
@@ -17,25 +18,16 @@ const { URLSearchParams } = require('url'),
     xml2js = require('xml2js'),
     yesno = require('yesno');
 
-// Custom error types
-class QueryValidationError extends Error {
+class ValidationError extends Error {
     constructor(message) {
-        super(message);
-        this.name = "QueryValidationError";
-    }
-}
+        let stack = [];
 
-class ParamsValidationError extends Error {
-    constructor(message) {
-        super(message);
-        this.name = "ParamsValidationError";
-    }
-}
+        message.forEach(err => {
+            stack.push(`${err.instancePath} ${err.message}, got "${typeof err.data}"`);
+        });
 
-class BodyValidationError extends Error {
-    constructor(message) {
-        super(message);
-        this.name = "BodyValidationError";
+        super(stack.join(', '));
+        this.name = "ValidationError";
     }
 }
 
@@ -67,7 +59,8 @@ class SwaggerClientBuilder {
                 }
             });
 
-            this.validator = new Validator();
+            this.validator = new Ajv({ allErrors: true, verbose: true });
+            this._wrapAjv();
 
             this.api = api;
             this.paths = this.api?.paths || {};
@@ -100,6 +93,32 @@ class SwaggerClientBuilder {
         }
     }
 
+    _wrapAjv() {
+        this.validator.addKeyword({
+            keyword: 'xml'
+        });
+
+        this.validator.addKeyword({
+            keyword: 'example'
+        });
+
+        this.validator.addFormat('int32', (data) => {
+            return !isNaN(data) && data >= -2147483648 && data <= 2147483647;
+        });
+
+        this.validator.addFormat('int64', (data) => {
+            return !isNaN(data) && data >= -9223372036854775808n && data <= 9223372036854775807n;
+        });
+
+        this.validator.addFormat('float', (data) => {
+            return !isNaN(data) && data >= -3.402823e+38 && data <= 3.402823e+38;
+        });
+
+        this.validator.addFormat('double', (data) => {
+            return !isNaN(data) && data >= -1.7976931348623157e+308 && data <= 1.7976931348623157e+308;
+        });
+    }
+
     _checkOperationIds() {
         const { paths } = this;
 
@@ -129,10 +148,7 @@ class SwaggerClientBuilder {
                     required: [],
                 };
 
-                primeSchema[at].properties[name] = {
-                    required,
-                    ...schema,
-                }
+                primeSchema[at].properties[name] = schema
 
                 if (required) primeSchema[at].required.push(name);
             }
@@ -166,36 +182,22 @@ class SwaggerClientBuilder {
                             try {
                                 let { params = {}, query = {}, body = {}, options = {} } = args;
 
-                                const id = `${path}/${methodKey}`;
-
                                 // Validate query
                                 if (primeSchema.query) {
-                                    const queryValidation = validator.validate(query, {
-                                        id,
-                                        ...primeSchema.query
-                                    });
-
-                                    if (queryValidation?.errors?.length > 0) throw new QueryValidationError(queryValidation.errors);
+                                    const queryValidation = this.validator.compile(primeSchema.query)
+                                    if (!queryValidation.schemaEnv.validate(query)) throw new ValidationError(queryValidation.errors);
                                 }
 
                                 // Validate params
                                 if (primeSchema.path) {
-                                    const paramsValidation = validator.validate(params, {
-                                        id,
-                                        ...primeSchema.path
-                                    });
-
-                                    if (paramsValidation?.errors?.length > 0) throw new ParamsValidationError(paramsValidation.errors);
+                                    const paramsValidation = this.validator.compile(primeSchema.path)
+                                    if (!paramsValidation.schemaEnv.validate(params)) throw new ValidationError(paramsValidation.errors);
                                 }
 
                                 // Validate body
                                 if (primeSchema.body) {
-                                    const bodyValidation = validator.validate(body, {
-                                        id,
-                                        ...primeSchema.body
-                                    });
-
-                                    if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
+                                    const bodyValidation = this.validator.compile(primeSchema.body)
+                                    if (!bodyValidation.schemaEnv.validate(query)) throw new ValidationError(bodyValidation.errors);
                                 }
 
                                 // Replace path parameters
@@ -227,9 +229,8 @@ class SwaggerClientBuilder {
                                     const requestBodySchema = method?.requestBody?.content?.[contentType]?.schema;
 
                                     if (requestBodySchema) {
-                                        // Validate body
-                                        const bodyValidation = validator.validate(body, requestBodySchema);
-                                        if (bodyValidation?.errors?.length > 0) throw new BodyValidationError(bodyValidation.errors);
+                                        const bodyValidation = this.validator.compile(requestBodySchema)
+                                        if (!bodyValidation.schemaEnv.validate(body)) throw new ValidationError(bodyValidation.errors);
                                     }
 
                                     // Convert body to content-type
@@ -280,7 +281,7 @@ class SwaggerClientBuilder {
         }
     }
 
-    async prepareForMustache() {
+    async _prepareForMustache(validation) {
         const paths = [];
         const dependencies = {};
         for (const path in this.paths) {
@@ -316,7 +317,7 @@ class SwaggerClientBuilder {
                     querySchema: schema?.query ? JSON.stringify(schema.query, null, 4) : null,
                     bodySchema: schema?.body ? JSON.stringify(schema.body, null, 4) : null,
                     requestBodySchema: method?.requestBody?.content?.[contentType]?.schema ? JSON.stringify(method.requestBody.content[contentType].schema, null, 4) : null,
-                    renderId: schema?.params || schema?.query || schema?.body || method?.requestBody?.content?.[contentType]?.schema ? true : false,
+                    renderId: schema?.params || schema?.query || schema?.body || method?.requestBody?.content?.[contentType]?.schema ? validation ? true : false : false,
                 });
             }
         }
@@ -327,6 +328,9 @@ class SwaggerClientBuilder {
         };
     }
 
+    _removeDoubleEmptyLines(code) {
+        return code.replace(/(\r\n|\r|\n){3,}/g, '\n');
+    }
 
     /**
      * Export client to a file
@@ -349,24 +353,28 @@ class SwaggerClientBuilder {
             { name: '{ URLSearchParams }', path: 'url' },
         ];
 
-        if (validation) dependencies.push({ name: '{ Validator }', path: 'jsonschema' });
+        if (validation) dependencies.push({ name: 'Ajv', path: 'ajv' });
+        if (ts) {
+            dependencies.push({ name: '{ CreateAxiosDefaults }', path: 'axios' });
+        }
 
-
-        const prepared = await this.prepareForMustache();
+        const prepared = await this._prepareForMustache(validation);
 
         // Add dependencies
         for (const dependency in prepared.dependencies) {
             dependencies.push({ name: dependency, path: prepared.dependencies[dependency] });
         }
-        
 
-        const code = Mustache.render((await fs.readFile(Path.join(__dirname, 'template.mustache'), 'utf8')).toString(), {
+
+        let code = Mustache.render((await fs.readFile(Path.join(__dirname, 'template.mustache'), 'utf8')).toString(), {
             ts,
             es,
             validation,
             dependencies,
             paths: prepared.paths,
         })
+
+        code = this._removeDoubleEmptyLines(code);
 
         const beautifiedCode = beautify(code, { indent_size: 4, space_in_empty_paren: true });
 
