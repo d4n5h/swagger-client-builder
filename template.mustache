@@ -1,5 +1,4 @@
 {{#ts}}
-//@ts-nocheck
 {{#dependencies}}
 import {{{name}}} from "{{{path}}}";
 {{/dependencies}}
@@ -29,11 +28,24 @@ const convertUrl = (path, params, query) => {
     return url;
 };
 
+class ValidationError extends Error {
+    constructor(message{{#ts}}: any[]{{/ts}}) {
+        const stack{{#ts}}: string[]{{/ts}} = [];
+
+        message.forEach(err => {
+            stack.push(`${err.instancePath} ${err.message}, got "${typeof err.data}"`);
+        });
+
+        super(stack.join(', '));
+        this.name = "ValidationError";
+    }
+}
+
 class Client {
     {{#ts}}
     instance: any;
     {{#validation}}
-    validator: Validator;
+    validator: Ajv;
     {{/validation}}
     {{/ts}}
 
@@ -45,7 +57,30 @@ class Client {
     {{/ts}}
         this.instance = axios.create(options);
         {{#validation}}
-        this.validator = new Validator();
+        this.validator = new Ajv();
+                this.validator.addKeyword({
+            keyword: 'xml'
+        });
+
+        this.validator.addKeyword({
+            keyword: 'example'
+        });
+
+        this.validator.addFormat('int32', (data{{#ts}}: any{{/ts}}) => {
+            return !isNaN(data) && data >= -2147483648 && data <= 2147483647;
+        });
+
+        this.validator.addFormat('int64', (data{{#ts}}: any{{/ts}}) => {
+            return !isNaN(data) && data >= -9223372036854775808n && data <= 9223372036854775807n;
+        });
+
+        this.validator.addFormat('float', (data{{#ts}}: any{{/ts}}) => {
+            return !isNaN(data) && data >= -3.402823e+38 && data <= 3.402823e+38;
+        });
+
+        this.validator.addFormat('double', (data{{#ts}}: any{{/ts}}) => {
+            return !isNaN(data) && data >= -1.7976931348623157e+308 && data <= 1.7976931348623157e+308;
+        });
         {{/validation}}
     }
 
@@ -78,40 +113,23 @@ class Client {
         return new Promise(async (resolve, reject) => {
             try {
     {{/ts}}
-                {{#renderId}}const id = "{{{id}}}";{{/renderId}}
             {{#validation}}
                 {{#paramsSchema}}
-                const paramsValidation = this.validator.validate(params, {
-                    id,
-                    ...{{{paramsSchema}}}
-                });
-
-                if (paramsValidation?.errors?.length > 0) throw new Error(paramsValidation.errors);
+                const paramsValidation = this.validator.compile({{{paramsSchema}}})
+                if (!paramsValidation?.schemaEnv?.validate?.(params) && paramsValidation?.errors != undefined) throw new ValidationError(paramsValidation?.errors);
                 {{/paramsSchema}}
                 {{#querySchema}}
-                const queryValidation = this.validator.validate(query, {
-                    id,
-                    ...{{{querySchema}}}
-                });
-
-                if (queryValidation?.errors?.length > 0) throw new Error(queryValidation.errors);
+                const queryValidation = this.validator.compile({{{querySchema}}})
+                if (!queryValidation?.schemaEnv?.validate?.(query) && queryValidation?.errors != undefined) throw new ValidationError(queryValidation?.errors);
                 {{/querySchema}}
                 {{#bodySchema}}
-                const bodyValidation = this.validator.validate(body, {
-                    id,
-                    ...{{{bodySchema}}}
-                });
-
-                if (bodyValidation?.errors?.length > 0) throw new Error(bodyValidation.errors);
+                const bodyValidation = this.validator.compile({{{bodySchema}}})
+                if (!bodyValidation?.schemaEnv?.validate?.(body) && bodyValidation?.errors != undefined) throw new ValidationError(bodyValidation?.errors);
                 {{/bodySchema}}
 
                 {{#requestBodySchema}}
-                const requestBodyValidation = this.validator.validate(body, {
-                    id,
-                    ...{{{requestBodySchema}}}
-                });
-
-                if (requestBodyValidation?.errors?.length > 0) throw new Error(requestBodyValidation.errors);
+                const requestBodyValidation = this.validator.compile({{{requestBodySchema}}})
+                if (!requestBodyValidation?.schemaEnv?.validate?.(body) && requestBodyValidation?.errors != undefined) throw new ValidationError(requestBodyValidation?.errors);
                 {{/requestBodySchema}}
             {{/validation}}
 
